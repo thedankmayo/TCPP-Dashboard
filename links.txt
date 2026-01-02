@@ -1,0 +1,9 @@
+ZeffyNewsletter link: 
+https://www.zeffy.com/en-US/newsletter-form/sign-up-for-our-newsletter-1974
+
+embedded newsletter link/HTML for TCPP website: 
+<iframe title='Signup form powered by Zeffy' style='position:absolute;border:0;top:0;left:0;bottom:0;right:0;width:100%;height:100%' src='https://www.zeffy.com/en-US/embed/newsletter-form/sign-up-for-our-newsletter-1974' allowTransparency="true"></iframe>
+
+Zeffy Treasurer Homepage:
+https://www.zeffy.com/o/fundraising/campaigns
+
