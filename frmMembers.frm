@@ -105,6 +105,7 @@ Option Explicit
 
 Private Sub UserForm_Initialize()
     On Error GoTo EH
+    modTCPPv2.ApplyTheme Me
     LoadMembershipTypes
     lstMembers.ColumnCount = 5
     lstMembers.ColumnWidths = "200;220;120;80;120"

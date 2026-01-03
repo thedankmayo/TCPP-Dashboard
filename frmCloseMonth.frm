@@ -56,6 +56,7 @@ End Sub
 
 Private Sub UserForm_Initialize()
     On Error GoTo EH
+    modTCPPv2.ApplyTheme Me
     LoadMonthList
     If Len(mMonthKey) = 0 Then mMonthKey = Format(Date, "yyyy-mm")
     cboMonth.value = mMonthKey

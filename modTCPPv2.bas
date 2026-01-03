@@ -504,6 +504,34 @@ Public Sub LogError(ByVal procName As String, ByVal errObj As ErrObject, ByVal c
 End Sub
 
 '========================
+' UI theming helpers
+'========================
+
+Public Sub ApplyTheme(ByVal frm As Object)
+    On Error Resume Next
+    frm.BackColor = RGB(245, 246, 250)
+    frm.Font.Name = "Segoe UI"
+    frm.Font.Size = 9
+
+    Dim ctl As Object
+    For Each ctl In frm.Controls
+        ctl.Font.Name = "Segoe UI"
+        ctl.Font.Size = 9
+        Select Case TypeName(ctl)
+            Case "CommandButton"
+                ctl.BackColor = RGB(32, 85, 154)
+                ctl.ForeColor = RGB(255, 255, 255)
+            Case "Label"
+                ctl.BackStyle = 0
+                ctl.ForeColor = RGB(50, 50, 50)
+            Case "TextBox", "ComboBox", "ListBox"
+                ctl.BackColor = RGB(255, 255, 255)
+                ctl.ForeColor = RGB(30, 30, 30)
+        End Select
+    Next ctl
+End Sub
+
+'========================
 ' Sheet/table helpers
 '========================
 
@@ -2277,7 +2305,12 @@ Private Function ParseCsvLine(ByVal line As String) As String()
     For i = 1 To Len(line)
         Dim ch As String: ch = Mid$(line, i, 1)
         If ch = """" Then
-            inQuotes = Not inQuotes
+            If inQuotes And i < Len(line) And Mid$(line, i + 1, 1) = """" Then
+                token = token & """"
+                i = i + 1
+            Else
+                inQuotes = Not inQuotes
+            End If
         ElseIf ch = "," And Not inQuotes Then
             ReDim Preserve result(idx)
             result(idx) = token
@@ -2349,8 +2382,20 @@ Private Function SelfTestReport() As String
     msg = msg & "- Agenda PDF: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\")) & vbCrLf
     msg = msg & "- Imports Zeffy: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\")) & vbCrLf
     msg = msg & "- Imports Blaze: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\")) & vbCrLf
+    msg = msg & "Templates:" & vbCrLf
+    msg = msg & "- Minutes template: " & TemplateStatus("TCPP Board Meeting Minutes Template.docx") & vbCrLf
+    msg = msg & "- Agenda template: " & TemplateStatus("Template Meeting Agenda.docx") & vbCrLf
 
     SelfTestReport = msg
+End Function
+
+Private Function TemplateStatus(ByVal templateName As String) As String
+    Dim p As String: p = GetTemplatePath(templateName)
+    If Len(Dir(p)) = 0 Then
+        TemplateStatus = "MISSING (" & p & ")"
+    Else
+        TemplateStatus = "OK (" & p & ")"
+    End If
 End Function
 
 Private Function CheckTable(ByVal sheetName As String, ByVal tableName As String) As String

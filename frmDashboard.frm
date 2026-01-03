@@ -89,6 +89,7 @@ Private Sub UserForm_Initialize()
     On Error GoTo EH
 
     modTCPPv2.InitializeTool False
+    modTCPPv2.ApplyTheme Me
 
     LoadMonthList
     LoadEventList

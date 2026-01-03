@@ -80,6 +80,7 @@ End Sub
 
 Private Sub UserForm_Initialize()
     On Error GoTo EH
+    modTCPPv2.ApplyTheme Me
     LoadMonthList
     If Len(mMonthKey) = 0 Then mMonthKey = Format(Date, "yyyy-mm")
     cboMonth.value = mMonthKey
@@ -137,6 +138,27 @@ Private Sub RefreshList()
     Set lo = ThisWorkbook.Worksheets("DATA_Ledger").ListObjects("tblLedger")
     If lo.DataBodyRange Is Nothing Then Exit Sub
 
+    Dim vendorByTxn As Object
+    Set vendorByTxn = CreateObject("Scripting.Dictionary")
+    vendorByTxn.CompareMode = 1
+
+    Dim rLo As ListObject
+    On Error Resume Next
+    Set rLo = ThisWorkbook.Worksheets("DATA_Receipts").ListObjects("tblReceipts")
+    On Error GoTo 0
+    If Not rLo Is Nothing Then
+        If Not rLo.DataBodyRange Is Nothing Then
+            Dim r As Long
+            For r = 1 To rLo.ListRows.Count
+                Dim tId As String
+                tId = CStr(rLo.DataBodyRange.Cells(r, rLo.ListColumns("TxnID").Index).Value)
+                If Len(tId) > 0 Then
+                    vendorByTxn(tId) = CStr(rLo.DataBodyRange.Cells(r, rLo.ListColumns("Vendor").Index).Value)
+                End If
+            Next r
+        End If
+    End If
+
     Dim mkFilter As String: mkFilter = Trim$(cboMonth.value)
     Dim txnFilter As String: txnFilter = Trim$(txtTxnId.value)
     Dim vendorFilter As String: vendorFilter = Trim$(txtVendor.value)
@@ -165,7 +187,9 @@ Private Sub RefreshList()
             If rs <> "Recorded" And rs <> "Waived" Then
                 If Len(vendorFilter) > 0 Then
                     Dim src As String: src = CStr(lo.DataBodyRange.Cells(i, srcCol).value)
-                    If InStr(1, src, vendorFilter, vbTextCompare) = 0 Then GoTo ContinueRow
+                    Dim vend As String: vend = ""
+                    If vendorByTxn.Exists(txnId) Then vend = CStr(vendorByTxn(txnId))
+                    If InStr(1, src & " " & vend, vendorFilter, vbTextCompare) = 0 Then GoTo ContinueRow
                 End If
 
                 lstTxns.AddItem txnId

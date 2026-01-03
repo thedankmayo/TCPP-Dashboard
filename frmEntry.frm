@@ -27,6 +27,7 @@ End Sub
 
 Private Sub UserForm_Initialize()
     On Error GoTo EH
+    modTCPPv2.ApplyTheme Me
 
     lblTxnID.caption = ""
     txtDate.value = Format(Date, "m/d/yyyy")
