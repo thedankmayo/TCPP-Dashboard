@@ -48,3 +48,12 @@ This script will import all modules and forms, overwrite the `ThisWorkbook` and 
 ## Notes
 - If you move the workbook, keep the templates next to it or update the paths in `tblConfig`.
 - All data sheets are `xlSheetVeryHidden`; the dashboard is the only user-facing surface.
+
+## VBA editor warnings about VERSION/Attribute lines
+If you paste `.cls` or `.frm` files into a plain module instead of importing them, Excel will show red errors (e.g., `VERSION 1.0 CLASS`, `Attribute VB_Name`). Those lines are **metadata** required by the VBE and must be imported via **File → Import File…** rather than pasted into a standard module.
+
+**Correct approach:**
+- Use **File → Import File…** for `.cls` and `.frm` files.
+- Only paste `.bas` files into a standard module if you must.
+
+When imported properly, those lines are handled by the VBE and do not appear as errors.
