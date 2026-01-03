@@ -22,6 +22,7 @@ Public Sub InitForMonth(ByVal monthKey As String)
 End Sub
 
 Private Sub UserForm_Initialize()
+    On Error GoTo EH
     If Len(mMonthKey) = 0 Then mMonthKey = Format(Date, "yyyy-mm")
     lblMonth.caption = "Month: " & mMonthKey
 
@@ -30,6 +31,9 @@ Private Sub UserForm_Initialize()
 
     RefreshLedgerTotals
     ComputeDiff
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmReconcile.Initialize", Err, mMonthKey
 End Sub
 
 Private Sub cmdCompute_Click()
@@ -38,8 +42,12 @@ Private Sub cmdCompute_Click()
 End Sub
 
 Private Sub cmdSave_Click()
+    On Error GoTo EH
     modTCPPv2.SaveReconciliation mMonthKey, CDbl(Val(txtBeginningBalance.value)), CDbl(Val(txtEndingBalance.value))
     Unload Me
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmReconcile.Save", Err, mMonthKey
 End Sub
 
 Private Sub cmdClose_Click()
@@ -65,4 +73,3 @@ Private Sub ComputeDiff()
     lblExpectedEnding.caption = "Expected ending: $" & Format(expected, "0.00")
     lblDifference.caption = "Difference: $" & Format(diff, "0.00")
 End Sub
-
