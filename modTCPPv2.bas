@@ -1310,7 +1310,7 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
     ws.Range("B37").Value = ytdExp
     ws.Range("B38").Value = ytdInc - ytdExp
 
-    Dim ytdBudgetVar As Double: ytdBudgetVar = BudgetVarYTD(monthKey)
+    Dim ytdBudgetVar As Double: ytdBudgetVar = BudgetVarYTDValue(monthKey)
     ws.Range("B39").Value = ytdBudgetVar
 
     ws.Columns("A:H").AutoFit
@@ -1596,7 +1596,7 @@ EH:
     HandleError "SetBudget", Err, monthKey & "|" & category
 End Sub
 
-Public Function BudgetVarYTD(ByVal monthKey As String) As Double
+Public Function BudgetVarYTDValue(ByVal monthKey As String) As Double
     On Error GoTo EH
     Dim startKey As String: startKey = FiscalYearStartMonthKey(monthKey)
     Dim cur As String: cur = startKey
@@ -1607,11 +1607,11 @@ Public Function BudgetVarYTD(ByVal monthKey As String) As Double
         cur = MonthKeyAdd(cur, 1)
     Loop
 
-    BudgetVarYTD = total
+    BudgetVarYTDValue = total
     Exit Function
 EH:
-    HandleError "BudgetVarYTD", Err, monthKey
-    BudgetVarYTD = 0#
+    HandleError "BudgetVarYTDValue", Err, monthKey
+    BudgetVarYTDValue = 0#
 End Function
 
 Private Function BudgetVarMonthValue(ByVal monthKey As String) As Double
@@ -1745,7 +1745,7 @@ Public Sub GetDashboardMetrics(ByVal monthKey As String, ByVal eventFilter As St
     charityHeld = CharityHeldYTD(monthKey)
 
     budgetVarMonth = BudgetVarMonthValue(monthKey)
-    budgetVarYTD = BudgetVarYTD(monthKey)
+    budgetVarYTD = BudgetVarYTDValue(monthKey)
     Exit Sub
 EH:
     HandleError "GetDashboardMetrics", Err, monthKey
