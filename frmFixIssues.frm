@@ -24,11 +24,15 @@ Public Sub Init(ByVal issueLabel As String, ByVal monthKey As String)
 End Sub
 
 Private Sub UserForm_Initialize()
+    On Error GoTo EH
+
     cboIssueType.Clear
     cboIssueType.AddItem "Uncategorized"
     cboIssueType.AddItem "Missing Receipt"
     cboIssueType.AddItem "Not Reconciled"
     cboIssueType.AddItem "Not Closed"
+    cboIssueType.AddItem "Charity imbalance"
+    cboIssueType.AddItem "Budget overrun"
     cboIssueType.value = NormalizeIssue(mIssue)
 
     LoadMonthList
@@ -42,6 +46,9 @@ Private Sub UserForm_Initialize()
     lstIssues.ColumnWidths = "160;60;70;160;120;90"
 
     RefreshIssues
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmFixIssues.Initialize", Err, ""
 End Sub
 
 Private Sub cboIssueType_Change()
@@ -60,27 +67,43 @@ Private Sub cmdSaveChanges_Click()
     If lstIssues.ListIndex < 0 Then Exit Sub
     Dim txnId As String: txnId = CStr(lstIssues.List(lstIssues.ListIndex, 0))
 
-    On Error Resume Next
+    On Error GoTo EH
     modTCPPv2.UpdateLedgerFields txnId, Trim$(cboCategory.value), Trim$(cboEvent.value), Trim$(cboCharity.value), CBool(chkReceiptRequired.value)
-    On Error GoTo 0
-
     RefreshIssues
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmFixIssues.SaveChanges", Err, txnId
 End Sub
 
 Private Sub cmdAttachReceipt_Click()
     If lstIssues.ListIndex < 0 Then Exit Sub
     Dim txnId As String: txnId = CStr(lstIssues.List(lstIssues.ListIndex, 0))
-    On Error Resume Next
-    modTCPPv2.AttachReceiptToTxn txnId
-    On Error GoTo 0
+    On Error GoTo EH
+
+    Dim vendor As String: vendor = InputBox("Vendor (optional):", "Receipt Vendor")
+    Dim storage As String: storage = InputBox("Storage location/path (optional):", "Receipt Storage")
+    Dim notes As String: notes = InputBox("Notes (optional):", "Receipt Notes")
+
+    modTCPPv2.CreateReceiptInfo txnId, vendor, Date, Date, storage, notes
     RefreshIssues
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmFixIssues.AttachReceipt", Err, txnId
 End Sub
 
 Private Sub cmdWaiveReceipt_Click()
     If lstIssues.ListIndex < 0 Then Exit Sub
     Dim txnId As String: txnId = CStr(lstIssues.List(lstIssues.ListIndex, 0))
+    On Error GoTo EH
+    If Len(Trim$(txtWaiveReason.value)) = 0 Then
+        MsgBox "Waive reason is required.", vbExclamation, "Receipt Waiver"
+        Exit Sub
+    End If
     modTCPPv2.WaiveReceipt txnId, Trim$(txtWaiveReason.value)
     RefreshIssues
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmFixIssues.WaiveReceipt", Err, txnId
 End Sub
 
 Private Sub cmdClose_Click()
@@ -94,8 +117,21 @@ Private Sub RefreshIssues()
     Dim issue As String: issue = NormalizeIssue(CStr(cboIssueType.value))
     Dim mk As String: mk = CStr(cboMonth.value)
 
-    If issue = "Not Reconciled" Or issue = "Not Closed" Then
-        ' month-level issue; no txn list
+    If issue = "Not Reconciled" Then
+        frmReconcile.InitForMonth mk
+        frmReconcile.Show vbModal
+        Unload Me
+        Exit Sub
+    ElseIf issue = "Not Closed" Then
+        On Error GoTo CloseEH
+        modTCPPv2.CloseMonth mk
+        Unload Me
+        Exit Sub
+CloseEH:
+        modTCPPv2.HandleError "frmFixIssues.CloseMonth", Err, mk
+        Exit Sub
+    ElseIf issue = "Charity imbalance" Or issue = "Budget overrun" Then
+        MsgBox "Please review the board packet and ledger details for this issue.", vbInformation, "TCPP"
         Exit Sub
     End If
 
@@ -108,13 +144,21 @@ Private Sub RefreshIssues()
     Dim idCol As Long: idCol = lo.ListColumns("TxnID").Index
     Dim dCol As Long: dCol = lo.ListColumns("Date").Index
     Dim netCol As Long: netCol = lo.ListColumns("Net").Index
-    Dim payeeCol As Long: payeeCol = lo.ListColumns("PayeeOrSource").Index
+    Dim srcCol As Long: srcCol = lo.ListColumns("SourceName").Index
     Dim catCol As Long: catCol = lo.ListColumns("Category").Index
     Dim rrCol As Long: rrCol = lo.ListColumns("ReceiptRequired").Index
     Dim rsCol As Long: rsCol = lo.ListColumns("ReceiptStatus").Index
+    Dim evCol As Long: evCol = lo.ListColumns("Event").Index
+    Dim chCol As Long: chCol = lo.ListColumns("Charity").Index
 
-    For i = 1 To lo.ListRows.count
+    For i = 1 To lo.ListRows.Count
         If CStr(lo.DataBodyRange.Cells(i, mkCol).value) = mk Then
+            If modTCPPv2.gEventFilter <> "(All)" Then
+                If CStr(lo.DataBodyRange.Cells(i, evCol).value) <> modTCPPv2.gEventFilter Then GoTo ContinueRow
+            End If
+            If modTCPPv2.gCharityFilter <> "(All)" Then
+                If CStr(lo.DataBodyRange.Cells(i, chCol).value) <> modTCPPv2.gCharityFilter Then GoTo ContinueRow
+            End If
             Dim showRow As Boolean: showRow = False
 
             If issue = "Uncategorized" Then
@@ -122,18 +166,19 @@ Private Sub RefreshIssues()
             ElseIf issue = "Missing Receipt" Then
                 Dim rr As Boolean: rr = CBool(lo.DataBodyRange.Cells(i, rrCol).value)
                 Dim rs As String: rs = CStr(lo.DataBodyRange.Cells(i, rsCol).value)
-                showRow = (rr And rs <> "Linked" And rs <> "Waived")
+                showRow = (rr And rs <> "Recorded" And rs <> "Waived")
             End If
 
             If showRow Then
                 lstIssues.AddItem CStr(lo.DataBodyRange.Cells(i, idCol).value)
                 lstIssues.List(lstIssues.ListCount - 1, 1) = Format(CDate(lo.DataBodyRange.Cells(i, dCol).value), "m/d")
                 lstIssues.List(lstIssues.ListCount - 1, 2) = Format(CDbl(lo.DataBodyRange.Cells(i, netCol).value), "0.00")
-                lstIssues.List(lstIssues.ListCount - 1, 3) = CStr(lo.DataBodyRange.Cells(i, payeeCol).value)
+                lstIssues.List(lstIssues.ListCount - 1, 3) = CStr(lo.DataBodyRange.Cells(i, srcCol).value)
                 lstIssues.List(lstIssues.ListCount - 1, 4) = CStr(lo.DataBodyRange.Cells(i, catCol).value)
                 lstIssues.List(lstIssues.ListCount - 1, 5) = CStr(lo.DataBodyRange.Cells(i, rsCol).value)
             End If
         End If
+ContinueRow:
     Next i
 
     If lstIssues.ListCount > 0 Then
@@ -152,7 +197,7 @@ Private Sub LoadSelectedToEditor()
     Dim i As Long, idCol As Long
     idCol = lo.ListColumns("TxnID").Index
 
-    For i = 1 To lo.ListRows.count
+    For i = 1 To lo.ListRows.Count
         If CStr(lo.DataBodyRange.Cells(i, idCol).value) = txnId Then
             cboCategory.value = CStr(lo.DataBodyRange.Cells(i, lo.ListColumns("Category").Index).value)
             cboEvent.value = CStr(lo.DataBodyRange.Cells(i, lo.ListColumns("Event").Index).value)
@@ -208,10 +253,6 @@ Private Sub LoadCharities()
 End Sub
 
 Private Function NormalizeIssue(ByVal s As String) As String
-    If InStr(1, s, "Uncategorized", vbTextCompare) > 0 Then NormalizeIssue = "Uncategorized": Exit Function
-    If InStr(1, s, "Missing Receipt", vbTextCompare) > 0 Then NormalizeIssue = "Missing Receipt": Exit Function
-    If InStr(1, s, "Not Reconciled", vbTextCompare) > 0 Then NormalizeIssue = "Not Reconciled": Exit Function
-    If InStr(1, s, "Not Closed", vbTextCompare) > 0 Then NormalizeIssue = "Not Closed": Exit Function
-    NormalizeIssue = "Uncategorized"
+    If Len(s) = 0 Then NormalizeIssue = "Uncategorized": Exit Function
+    NormalizeIssue = s
 End Function
-
