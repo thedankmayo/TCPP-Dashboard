@@ -1603,7 +1603,7 @@ Public Function BudgetVarYTD(ByVal monthKey As String) As Double
     Dim total As Double: total = 0#
 
     Do While MonthKeyLessOrEqual(cur, monthKey)
-        total = total + BudgetVarMonth(cur)
+        total = total + BudgetVarMonthValue(cur)
         cur = MonthKeyAdd(cur, 1)
     Loop
 
@@ -1614,14 +1614,14 @@ EH:
     BudgetVarYTD = 0#
 End Function
 
-Private Function BudgetVarMonth(ByVal monthKey As String) As Double
+Private Function BudgetVarMonthValue(ByVal monthKey As String) As Double
     Dim categories As Variant
     categories = GetCategoryList()
 
     Dim i As Long
     For i = LBound(categories) To UBound(categories)
         Dim cat As String: cat = CStr(categories(i))
-        BudgetVarMonth = BudgetVarMonth + (GetBudget(monthKey, cat) - SumLedgerNet(monthKey, "(All)", "(All)", "(All)", cat))
+        BudgetVarMonthValue = BudgetVarMonthValue + (GetBudget(monthKey, cat) - SumLedgerNet(monthKey, "(All)", "(All)", "(All)", cat))
     Next i
 End Function
 
@@ -1744,7 +1744,7 @@ Public Sub GetDashboardMetrics(ByVal monthKey As String, ByVal eventFilter As St
     charityPaid = SumCharity(monthKey, "Paid")
     charityHeld = CharityHeldYTD(monthKey)
 
-    budgetVarMonth = BudgetVarMonth(monthKey)
+    budgetVarMonth = BudgetVarMonthValue(monthKey)
     budgetVarYTD = BudgetVarYTD(monthKey)
     Exit Sub
 EH:
