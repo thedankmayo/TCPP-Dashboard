@@ -341,10 +341,10 @@ Private Function GetOrCreateForm(ByVal vbProj As Object, ByVal formName As Strin
 End Function
 
 Private Sub ClearControls(ByVal frm As Object)
-    Dim ctl As Object
-    For Each ctl In frm.Controls
-        frm.Controls.Remove ctl.Name
-    Next ctl
+    Dim i As Long
+    For i = frm.Controls.Count - 1 To 0 Step -1
+        frm.Controls.Remove frm.Controls(i).Name
+    Next i
 End Sub
 
 Private Sub AddButton(ByVal frm As Object, ByVal name As String, ByVal caption As String, _
