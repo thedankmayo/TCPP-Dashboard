@@ -23,7 +23,7 @@ Private Sub cmdAddEvent_Click()
     On Error GoTo EH
     Dim v As String: v = Trim$(txtNewEvent.value)
     If Len(v) = 0 Then Exit Sub
-    AppendToLookup "tblEvents", "Event", v
+    AppendToLookup "tblEventsList", "Event", v
     txtNewEvent.value = ""
     RefreshLists
     Exit Sub
@@ -34,7 +34,7 @@ End Sub
 Private Sub cmdRemoveEvent_Click()
     On Error GoTo EH
     If lstEvents.ListIndex < 0 Then Exit Sub
-    RemoveFromLookup "tblEvents", "Event", CStr(lstEvents.List(lstEvents.ListIndex))
+    RemoveFromLookup "tblEventsList", "Event", CStr(lstEvents.List(lstEvents.ListIndex))
     RefreshLists
     Exit Sub
 EH:
@@ -211,7 +211,7 @@ Private Sub cmdClose_Click()
 End Sub
 
 Private Sub RefreshLists()
-    LoadList lstEvents, "tblEvents", "Event"
+    LoadList lstEvents, "tblEventsList", "Event"
     LoadList lstCharities, "tblCharities", "Charity"
     LoadList lstCOA, "tblCOA", "Category"
     LoadList lstPaymentMethods, "tblPaymentMethods", "PaymentMethod"
