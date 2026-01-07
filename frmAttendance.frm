@@ -34,7 +34,7 @@ End Sub
 Private Sub cmdAdd_Click()
     On Error GoTo EH
     If Len(Trim$(txtPersonName.value)) = 0 Then Exit Sub
-    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Attendance").ListObjects("tblAttendance")
+    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Attendance").ListObjects("tblMeetingAttendance")
     Dim lr As ListRow: Set lr = lo.ListRows.Add
 
     lr.Range.Cells(1, lo.ListColumns("MeetingID").Index).value = mMeetingId
@@ -51,7 +51,7 @@ End Sub
 Private Sub cmdDelete_Click()
     If lstAttendance.ListIndex < 0 Then Exit Sub
     On Error GoTo EH
-    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Attendance").ListObjects("tblAttendance")
+    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Attendance").ListObjects("tblMeetingAttendance")
     Dim i As Long
     For i = lo.ListRows.count To 1 Step -1
         If CStr(lo.DataBodyRange.Cells(i, lo.ListColumns("MeetingID").Index).value) = mMeetingId And _
@@ -68,7 +68,7 @@ End Sub
 
 Private Sub RefreshList()
     lstAttendance.Clear
-    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Attendance").ListObjects("tblAttendance")
+    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Attendance").ListObjects("tblMeetingAttendance")
     If lo.DataBodyRange Is Nothing Then Exit Sub
 
     Dim i As Long

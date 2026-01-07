@@ -10,12 +10,18 @@ Attribute VB_Exposed = True
 Option Explicit
 
 Public Sub Workbook_Open()
-    On Error Resume Next
+    On Error GoTo EH
     modTCPPv2.InitializeTool False
     modTCPPv2.ShowDashboard
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "Workbook_Open", Err, ""
 End Sub
 
 Public Sub Workbook_BeforeClose(Cancel As Boolean)
-    On Error Resume Next
+    On Error GoTo EH
     modTCPPv2.CleanupOnClose
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "Workbook_BeforeClose", Err, ""
 End Sub

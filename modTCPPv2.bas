@@ -31,7 +31,9 @@ Private Const SH_AGENDA As String = "DATA_Agenda"
 Private Const SH_IMPORTS As String = "DATA_Imports"
 Private Const SH_AUDIT As String = "DATA_Audit"
 Private Const SH_ERRORLOG As String = "DATA_ErrorLog"
+Private Const SH_COMPLIANCE As String = "DATA_Compliance"
 Private Const SH_REPORT As String = "RPT_Monthly"
+Private Const SH_COMPLIANCE_REPORT As String = "RPT_Compliance"
 Private Const SH_ARCHIVE As String = "ARCH_BoardPackets"
 
 '--- Table names
@@ -41,10 +43,11 @@ Private Const T_BUDGET As String = "tblBudget"
 Private Const T_MONTHSTATUS As String = "tblMonthStatus"
 Private Const T_MEMBERS As String = "tblMembers"
 Private Const T_MEETINGS As String = "tblMeetings"
-Private Const T_ATTENDANCE As String = "tblAttendance"
+Private Const T_ATTENDANCE As String = "tblMeetingAttendance"
 Private Const T_MINUTES_LINES As String = "tblMinutesAgendaLines"
 Private Const T_ACTION_ITEMS As String = "tblActionItems"
 Private Const T_AGENDA As String = "tblAgenda"
+Private Const T_EVENT_ATTENDANCE As String = "tblEventAttendance"
 Private Const T_IMPORTLOG As String = "tblImportLog"
 Private Const T_ZEFFY_RAW As String = "tblZeffyRaw"
 Private Const T_BLAZE_RAW As String = "tblBlazeRaw"
@@ -52,16 +55,27 @@ Private Const T_IMPORTMAP_ZEFFY As String = "tblImportMap_Zeffy"
 Private Const T_IMPORTMAP_BLAZE As String = "tblImportMap_Blaze"
 Private Const T_ERRORLOG As String = "tblErrorLog"
 Private Const T_AUDIT As String = "tblAuditLog"
+Private Const T_COMPLIANCE_EVENTS As String = "tblEvents"
+Private Const T_COMPLIANCE_VENDORS As String = "tblVendorsPartners"
+Private Const T_COMPLIANCE_VOLUNTEERS As String = "tblVolunteers"
+Private Const T_COMPLIANCE_GIVEAWAYS As String = "tblGiveaways"
+Private Const T_COMPLIANCE_REFUNDS As String = "tblRefundRequests"
+Private Const T_COMPLIANCE_INCIDENTS As String = "tblIncidentsComplaints"
+Private Const T_COMPLIANCE_OUTCOMES As String = "tblOutcomes"
+Private Const T_COMPLIANCE_APPEALS As String = "tblAppeals"
+Private Const T_COMPLIANCE_ACKS As String = "tblPolicyAcks"
+Private Const T_COMPLIANCE_PAYMENT_ADMINS As String = "tblPaymentAdmins"
 
 '--- Lookup tables
 Private Const T_COA As String = "tblCOA"
 Private Const T_TXN_TYPES As String = "tblTxnTypes"
 Private Const T_TXN_SUBTYPES As String = "tblTxnSubtypes"
-Private Const T_EVENTS As String = "tblEvents"
+Private Const T_EVENTS_LIST As String = "tblEventsList"
 Private Const T_CHARITIES As String = "tblCharities"
 Private Const T_PAYMETHOD As String = "tblPaymentMethods"
 Private Const T_BOARDROSTER As String = "tblBoardRoster"
 Private Const T_MEMBERTYPES As String = "tblMembershipTypes"
+Private Const T_MEETING_TYPES As String = "tblMeetingTypes"
 Private Const T_CONFIG As String = "tblConfig"
 
 '--- Config keys
@@ -69,6 +83,7 @@ Private Const CFG_FISCAL_START_MONTH As String = "FiscalYearStartMonth"
 Private Const CFG_APPROVER_NAME As String = "ApproverName"
 Private Const CFG_RENEWAL_INTERVAL As String = "RenewalIntervalMonths"
 Private Const CFG_STRICT_BUDGET As String = "StrictBudgetGate"
+Private Const CFG_RECEIPT_WAIVER_REASON As String = "ReceiptWaiverRequiresReason"
 Private Const CFG_PATH_BOARDPACKETS As String = "BoardPacketsFolderRelative"
 Private Const CFG_PATH_MINUTES_DOCX As String = "MinutesDocxFolderRelative"
 Private Const CFG_PATH_MINUTES_PDF As String = "MinutesPdfFolderRelative"
@@ -76,6 +91,24 @@ Private Const CFG_PATH_AGENDA_DOCX As String = "AgendaDocxFolderRelative"
 Private Const CFG_PATH_AGENDA_PDF As String = "AgendaPdfFolderRelative"
 Private Const CFG_PATH_IMPORTS_ZEFFY As String = "ImportsZeffyFolderRelative"
 Private Const CFG_PATH_IMPORTS_BLAZE As String = "ImportsBlazeFolderRelative"
+Private Const CFG_PATH_COMPLIANCE_DOCS As String = "ComplianceDocsFolderRelative"
+Private Const CFG_PATH_IMPORTS_ARCHIVE As String = "ImportsArchiveFolderRelative"
+Private Const CFG_MEETING_NOTICE_REGULAR As String = "RegularMeetingNoticeDays"
+Private Const CFG_MEETING_NOTICE_ANNUAL As String = "AnnualMeetingNoticeDays"
+Private Const CFG_MEETING_NOTICE_SPECIAL As String = "SpecialMeetingNoticeHours"
+Private Const CFG_BOARD_QUORUM As String = "BoardQuorumCount"
+Private Const CFG_DUES_INITIAL_DUE_DAYS As String = "DuesInitialDueDaysAfterApproval"
+Private Const CFG_DUES_AMOUNT_FULL As String = "DuesAmount_Full"
+Private Const CFG_DUES_AMOUNT_ATLARGE As String = "DuesAmount_AtLarge"
+Private Const CFG_DUES_SPLIT_FULL As String = "DuesSplitAllowed_Full"
+Private Const CFG_DUES_SPLIT_ATLARGE As String = "DuesSplitAllowed_AtLarge"
+Private Const CFG_MIN_AGE_FULL As String = "MembershipMinAge_Full"
+Private Const CFG_MIN_AGE_ATLARGE As String = "MembershipMinAge_AtLarge"
+Private Const CFG_EVENTS_REQ_FULL As String = "FullMemberEventsReqPerCalendarYear"
+Private Const CFG_VOLUNTEER_REQ_FULL As String = "FullMemberVolunteerEventsReqPerCalendarYear"
+Private Const CFG_RETENTION_MINOR As String = "RetentionYears_MinorIncident"
+Private Const CFG_RETENTION_SEVERE As String = "RetentionYears_SevereOrConsent"
+Private Const CFG_REFUND_APPROVAL_SELF_OK As String = "RefundAllowSelfApproval"
 
 '--- Globals for current dashboard filters
 Public gMonthKey As String
@@ -162,7 +195,9 @@ Private Sub EnsureCoreSheets(ByVal forceRebuild As Boolean)
     EnsureSheet SH_IMPORTS, xlSheetVeryHidden
     EnsureSheet SH_AUDIT, xlSheetVeryHidden
     EnsureSheet SH_ERRORLOG, xlSheetVeryHidden
+    EnsureSheet SH_COMPLIANCE, xlSheetVeryHidden
     EnsureSheet SH_REPORT, xlSheetVeryHidden
+    EnsureSheet SH_COMPLIANCE_REPORT, xlSheetVeryHidden
     EnsureSheet SH_ARCHIVE, xlSheetVeryHidden
 
     With GetSheet(SH_HOME)
@@ -181,10 +216,12 @@ Private Sub EnsureCoreTables(ByVal forceRebuild As Boolean)
     EnsureMembersTable forceRebuild
     EnsureMeetingsTables forceRebuild
     EnsureAgendaTable forceRebuild
+    EnsureComplianceTables forceRebuild
     EnsureImportsTables forceRebuild
     EnsureAuditTable forceRebuild
     EnsureErrorLogTable forceRebuild
     EnsureReportSheetLayout
+    EnsureComplianceReportLayout
     EnsureArchiveTable forceRebuild
 End Sub
 
@@ -195,12 +232,14 @@ Private Sub EnsureLookupTables(ByVal forceRebuild As Boolean)
     EnsureTable ws, T_COA, Array("Category"), 1, 1, forceRebuild
     EnsureTable ws, T_TXN_TYPES, Array("TxnType"), 1, 3, forceRebuild
     EnsureTable ws, T_TXN_SUBTYPES, Array("TxnSubtype"), 1, 5, forceRebuild
-    EnsureTable ws, T_EVENTS, Array("Event"), 1, 7, forceRebuild
+    RenameLookupTable "tblEvents", T_EVENTS_LIST
+    EnsureTable ws, T_EVENTS_LIST, Array("Event"), 1, 7, forceRebuild
     EnsureTable ws, T_CHARITIES, Array("Charity"), 1, 9, forceRebuild
     EnsureTable ws, T_PAYMETHOD, Array("PaymentMethod"), 1, 11, forceRebuild
     EnsureTable ws, T_BOARDROSTER, Array("Name", "Role", "ActiveFlag"), 1, 13, forceRebuild
     EnsureTable ws, T_MEMBERTYPES, Array("MembershipType"), 1, 16, forceRebuild
-    EnsureTable ws, T_CONFIG, Array("Key", "Value"), 1, 18, forceRebuild
+    EnsureTable ws, T_MEETING_TYPES, Array("MeetingType"), 1, 18, forceRebuild
+    EnsureTable ws, T_CONFIG, Array("Key", "Value"), 1, 20, forceRebuild
 End Sub
 
 Private Sub EnsureLedgerTable(ByVal forceRebuild As Boolean)
@@ -214,7 +253,7 @@ Private Sub EnsureLedgerTable(ByVal forceRebuild As Boolean)
         "Category", "Event", "Charity", _
         "Gross", "Fees", "Net", _
         "PaymentMethod", "SourceType", "SourceName", _
-        "MemberName", "MemberEmail", "Memo", _
+        "MemberID", "MemberName", "MemberEmail", "Memo", _
         "ReceiptRequired", "ReceiptStatus", "ReceiptInfoID", _
         "ApprovedBy", "ClosedFlag", _
         "ExternalSource", "ExternalTxnID", "ImportBatchID", _
@@ -257,8 +296,12 @@ Private Sub EnsureMembersTable(ByVal forceRebuild As Boolean)
     Dim ws As Worksheet
     Set ws = GetSheet(SH_MEMBERS)
     EnsureTable ws, T_MEMBERS, Array( _
-        "MemberID", "MemberName", "MemberEmail", "MembershipType", "JoinedDate", _
-        "DuesPaidFlag", "DuesPaidDate", "DuesAmount", "RenewalDate", "Notes", _
+        "MemberID", "MemberName", "MemberEmail", "MembershipType", "Status", _
+        "ApplicationReceivedDate", "BoardVoteDate", "BoardVoteResult", "ApprovalNotes", _
+        "JoinedDate", "DuesPaidFlag", "DuesPaidDate", "DuesAmount", _
+        "DuesSplitPlanFlag", "DuesSecondInstallmentDue", "RenewalDate", _
+        "RenewalIntervalMonths", "ParticipationYear", "EventsAttendedYTD", "VolunteerEventsYTD", _
+        "AgeVerifiedFlag", "AgeVerifiedBy", "AgeVerifiedAt", "Notes", _
         "ExternalSource", "ExternalMemberID", "LastUpdatedAt" _
     ), 1, 1, forceRebuild
 End Sub
@@ -266,15 +309,18 @@ End Sub
 Private Sub EnsureMeetingsTables(ByVal forceRebuild As Boolean)
     EnsureTable GetSheet(SH_MEETINGS), T_MEETINGS, Array( _
         "MeetingID", "MeetingDate", "StartTime", "EndTime", "Scribe", "Location", _
+        "MeetingType", "OpenSessionFlag", "RemoteAllowedFlag", "RemoteRequestBy", _
+        "RemoteRequestAt", "NoticeSentAt", "QuorumMetFlag", _
         "MinutesDocPath", "MinutesPdfPath", "CreatedAt" _
     ), 1, 1, forceRebuild
 
+    RenameTableOnSheet SH_ATTENDANCE, "tblAttendance", T_ATTENDANCE
     EnsureTable GetSheet(SH_ATTENDANCE), T_ATTENDANCE, Array( _
         "MeetingID", "PersonName", "Role", "PresentFlag" _
     ), 1, 1, forceRebuild
 
     EnsureTable GetSheet(SH_MINUTES_LINES), T_MINUTES_LINES, Array( _
-        "MeetingID", "LineTime", "Topic", "Notes", "ActionItem", "Owner" _
+        "MeetingID", "LineTime", "Topic", "Notes", "ActionItem", "Owner", "DueDate", "ActionStatus" _
     ), 1, 1, forceRebuild
 
     EnsureTable GetSheet(SH_ACTION_ITEMS), T_ACTION_ITEMS, Array( _
@@ -288,6 +334,79 @@ Private Sub EnsureAgendaTable(ByVal forceRebuild As Boolean)
     ), 1, 1, forceRebuild
 End Sub
 
+Private Sub EnsureComplianceTables(ByVal forceRebuild As Boolean)
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_COMPLIANCE)
+
+    EnsureTable ws, T_COMPLIANCE_EVENTS, Array( _
+        "EventID", "EventName", "EventDate", "StartTime", "EndTime", "Location", "VenueContact", _
+        "EventType", "AgeRestriction", "CharityPartner", "Purpose", "SafetyLead", "FinanceLead", _
+        "DoorCheckinLead", "VolunteerLead", "PaymentMethodsOnSite", "CashHandlingPlan", _
+        "IncidentReportingPostedFlag", "PhotoMediaConsentPlan", "ApprovalStatus", "ApprovedBy", _
+        "ApprovedAt", "Notes", "CreatedAt", "UpdatedAt" _
+    ), 1, 1, forceRebuild
+
+    EnsureTable ws, T_EVENT_ATTENDANCE, Array( _
+        "EventID", "MemberID", "MemberName", "AttendedFlag", "VolunteerFlag", "VolunteerRole", _
+        "Hours", "Notes" _
+    ), 40, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_VENDORS, Array( _
+        "VendorID", "BusinessName", "ContactName", "ContactEmail", "ContactPhone", _
+        "ServicesProvided", "AgreementPath", "InsurancePath", "PaymentTerms", _
+        "ApprovedFlag", "ApprovedBy", "ApprovedAt", "Notes", "CreatedAt", "UpdatedAt" _
+    ), 80, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_VOLUNTEERS, Array( _
+        "VolunteerID", "EventID", "VolunteerName", "VolunteerEmail", "VolunteerPhone", _
+        "EmergencyContact", "AgreementSignedFlag", "SignedAt", "AgreementPath", "Notes", _
+        "CreatedAt", "UpdatedAt" _
+    ), 120, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_GIVEAWAYS, Array( _
+        "GiveawayID", "Title", "Sponsor", "StartDate", "EndDate", "PrizeDescription", _
+        "PrizeValue", "NoPurchaseRequiredFlag", "FreeEntryMethod", "Eligibility", _
+        "WinnerSelectionMethod", "WinnerNotifiedAt", "WinnerName", "WinnerContact", _
+        "RulesDocPath", "Notes", "CreatedAt", "UpdatedAt" _
+    ), 170, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_REFUNDS, Array( _
+        "RefundID", "RequestDate", "RequesterName", "RequesterEmail", "TxnID", "EventID", _
+        "AmountRequested", "Reason", "Status", "ApprovedBy", "ApprovedAt", "PaidTxnID", _
+        "FormDocPath", "Notes", "CreatedAt", "UpdatedAt" _
+    ), 230, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_INCIDENTS, Array( _
+        "CaseID", "CaseType", "ReportDate", "ReportedByName", "ReportedByContact", _
+        "EventID", "Location", "InvolvedParties", "Summary", "ImmediateActionsTaken", _
+        "Severity", "SSC_ConsentRelatedFlag", "ConfidentialFlag", "Status", "OutcomeID", _
+        "RetentionUntil", "EvidencePath", "Notes", "CreatedAt", "UpdatedAt" _
+    ), 300, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_OUTCOMES, Array( _
+        "OutcomeID", "CaseID", "OutcomeDate", "Findings", "ConsequenceType", _
+        "ConsequenceDetails", "EffectiveFrom", "EffectiveTo", "NoticeDocPath", _
+        "AppealAllowedFlag", "AppealDeadline", "ClosedAt", "CreatedAt" _
+    ), 370, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_APPEALS, Array( _
+        "AppealID", "OutcomeID", "AppealDate", "AppellantName", "Grounds", _
+        "EvidencePath", "Status", "DecisionDate", "DecisionBy", "DecisionNotes", _
+        "AppealDocPath", "CreatedAt" _
+    ), 430, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_ACKS, Array( _
+        "AckID", "PersonName", "PersonEmail", "PolicyName", "PolicyVersion", _
+        "SignedFlag", "SignedAt", "ProofPath", "Notes" _
+    ), 480, 1, forceRebuild
+
+    EnsureTable ws, T_COMPLIANCE_PAYMENT_ADMINS, Array( _
+        "AdminID", "Platform", "AccountIdentifier", "AdminName", "AdminEmail", _
+        "Role", "TwoFAEnabledFlag", "AddedAt", "RemovedAt", "LastReviewedAt", _
+        "ReviewedInMeetingID", "Notes" _
+    ), 520, 1, forceRebuild
+End Sub
+
 Private Sub EnsureImportsTables(ByVal forceRebuild As Boolean)
     Dim ws As Worksheet
     Set ws = GetSheet(SH_IMPORTS)
@@ -295,10 +414,18 @@ Private Sub EnsureImportsTables(ByVal forceRebuild As Boolean)
     EnsureTable ws, T_IMPORTLOG, Array( _
         "ImportBatchID", "Source", "ImportedAt", "FileName", "FileHash", "RowCount", "Notes", "Status" _
     ), 1, 1, forceRebuild
-    EnsureTable ws, T_ZEFFY_RAW, Array("ImportBatchID", "RowHash", "RawData"), 1, 9, forceRebuild
-    EnsureTable ws, T_BLAZE_RAW, Array("ImportBatchID", "RowHash", "RawData"), 1, 13, forceRebuild
-    EnsureTable ws, T_IMPORTMAP_ZEFFY, Array("SourceColumn", "TargetColumn", "Notes"), 1, 17, forceRebuild
-    EnsureTable ws, T_IMPORTMAP_BLAZE, Array("SourceColumn", "TargetColumn", "Notes"), 1, 21, forceRebuild
+    EnsureTable ws, T_ZEFFY_RAW, Array( _
+        "ImportBatchID", "RowNum", "RawLine", "ExternalTxnID", "RowHash", "CreatedAt" _
+    ), 1, 9, forceRebuild
+    EnsureTable ws, T_BLAZE_RAW, Array( _
+        "ImportBatchID", "RowNum", "RawLine", "ExternalTxnID", "RowHash", "CreatedAt" _
+    ), 1, 17, forceRebuild
+    EnsureTable ws, T_IMPORTMAP_ZEFFY, Array( _
+        "SourceColumn", "TargetTable", "TargetColumn", "TransformRule", "ActiveFlag" _
+    ), 1, 25, forceRebuild
+    EnsureTable ws, T_IMPORTMAP_BLAZE, Array( _
+        "SourceColumn", "TargetTable", "TargetColumn", "TransformRule", "ActiveFlag" _
+    ), 1, 31, forceRebuild
 End Sub
 
 Private Sub EnsureAuditTable(ByVal forceRebuild As Boolean)
@@ -319,7 +446,7 @@ Private Sub EnsureArchiveTable(ByVal forceRebuild As Boolean)
     Dim ws As Worksheet
     Set ws = GetSheet(SH_ARCHIVE)
     EnsureTable ws, "ARCH_BoardPackets", Array( _
-        "MonthKey", "FiscalYear", "GeneratedAt", "SnapshotRange" _
+        "MonthKey", "FiscalYear", "GeneratedAt", "GeneratedBy", "PdfPath", "SnapshotRange", "SnapshotHash" _
     ), 1, 1, forceRebuild
 End Sub
 
@@ -374,6 +501,16 @@ Private Sub EnsureReportSheetLayout()
     ws.Range("A39").value = "Budget Var (YTD $)"
 End Sub
 
+Private Sub EnsureComplianceReportLayout()
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_COMPLIANCE_REPORT)
+    ws.Cells.ClearContents
+    ws.Range("A1").value = "TCPP Compliance Export"
+    ws.Range("A2").value = "Generated"
+    ws.Range("B2").value = Now
+    ws.Columns("A:B").ColumnWidth = 28
+End Sub
+
 Private Sub EnsureConfigDefaults()
     Dim cfg As ListObject
     Set cfg = GetTable(SH_LOOKUPS, T_CONFIG)
@@ -382,6 +519,7 @@ Private Sub EnsureConfigDefaults()
     UpsertConfig cfg, CFG_APPROVER_NAME, Application.UserName
     UpsertConfig cfg, CFG_RENEWAL_INTERVAL, "12"
     UpsertConfig cfg, CFG_STRICT_BUDGET, "FALSE"
+    UpsertConfig cfg, CFG_RECEIPT_WAIVER_REASON, "TRUE"
 
     UpsertConfig cfg, CFG_PATH_BOARDPACKETS, ".\BoardPackets\"
     UpsertConfig cfg, CFG_PATH_MINUTES_DOCX, ".\Minutes\DOCX\"
@@ -390,6 +528,25 @@ Private Sub EnsureConfigDefaults()
     UpsertConfig cfg, CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\"
     UpsertConfig cfg, CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\"
     UpsertConfig cfg, CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\"
+    UpsertConfig cfg, CFG_PATH_COMPLIANCE_DOCS, ".\Compliance\Docs\"
+    UpsertConfig cfg, CFG_PATH_IMPORTS_ARCHIVE, ".\Imports\Archive\"
+
+    UpsertConfig cfg, CFG_MEETING_NOTICE_REGULAR, "14"
+    UpsertConfig cfg, CFG_MEETING_NOTICE_ANNUAL, "30"
+    UpsertConfig cfg, CFG_MEETING_NOTICE_SPECIAL, "48"
+    UpsertConfig cfg, CFG_BOARD_QUORUM, "5"
+    UpsertConfig cfg, CFG_DUES_INITIAL_DUE_DAYS, "30"
+    UpsertConfig cfg, CFG_DUES_AMOUNT_FULL, "30"
+    UpsertConfig cfg, CFG_DUES_AMOUNT_ATLARGE, "20"
+    UpsertConfig cfg, CFG_DUES_SPLIT_FULL, "TRUE"
+    UpsertConfig cfg, CFG_DUES_SPLIT_ATLARGE, "FALSE"
+    UpsertConfig cfg, CFG_MIN_AGE_FULL, "21"
+    UpsertConfig cfg, CFG_MIN_AGE_ATLARGE, "18"
+    UpsertConfig cfg, CFG_EVENTS_REQ_FULL, "4"
+    UpsertConfig cfg, CFG_VOLUNTEER_REQ_FULL, "1"
+    UpsertConfig cfg, CFG_RETENTION_MINOR, "3"
+    UpsertConfig cfg, CFG_RETENTION_SEVERE, "7"
+    UpsertConfig cfg, CFG_REFUND_APPROVAL_SELF_OK, "FALSE"
 End Sub
 
 Private Sub EnsureDefaultFolders()
@@ -400,6 +557,8 @@ Private Sub EnsureDefaultFolders()
     EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\"))
     EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\"))
     EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_COMPLIANCE_DOCS, ".\Compliance\Docs\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ARCHIVE, ".\Imports\Archive\"))
 End Sub
 
 Private Sub SeedLookupsIfEmpty()
@@ -437,7 +596,7 @@ Private Sub SeedLookupsIfEmpty()
         AppendListValue subtypes, 1, "Grant"
     End If
 
-    Dim ev As ListObject: Set ev = GetTable(SH_LOOKUPS, T_EVENTS)
+    Dim ev As ListObject: Set ev = GetTable(SH_LOOKUPS, T_EVENTS_LIST)
     If ev.DataBodyRange Is Nothing Then
         AppendListValue ev, 1, "Backrooms"
         AppendListValue ev, 1, "Tank"
@@ -467,6 +626,13 @@ Private Sub SeedLookupsIfEmpty()
         AppendListValue mt, 1, "Full"
         AppendListValue mt, 1, "AtLarge"
         AppendListValue mt, 1, "Other"
+    End If
+
+    Dim mtg As ListObject: Set mtg = GetTable(SH_LOOKUPS, T_MEETING_TYPES)
+    If mtg.DataBodyRange Is Nothing Then
+        AppendListValue mtg, 1, "Regular"
+        AppendListValue mtg, 1, "Annual"
+        AppendListValue mtg, 1, "Special"
     End If
 End Sub
 
@@ -539,6 +705,65 @@ Private Function GetSheet(ByVal sheetName As String) As Worksheet
     Set GetSheet = ThisWorkbook.Worksheets(sheetName)
 End Function
 
+Private Sub RenameLookupTable(ByVal oldName As String, ByVal newName As String)
+    On Error Resume Next
+    Dim ws As Worksheet: Set ws = GetSheet(SH_LOOKUPS)
+    If ws Is Nothing Then Exit Sub
+    Dim lo As ListObject: Set lo = ws.ListObjects(oldName)
+    If lo Is Nothing Then Exit Sub
+    lo.name = newName
+    On Error GoTo 0
+End Sub
+
+Private Sub RenameTableOnSheet(ByVal sheetName As String, ByVal oldName As String, ByVal newName As String)
+    On Error Resume Next
+    Dim ws As Worksheet: Set ws = GetSheet(sheetName)
+    If ws Is Nothing Then Exit Sub
+    Dim lo As ListObject: Set lo = ws.ListObjects(oldName)
+    If lo Is Nothing Then Exit Sub
+    lo.name = newName
+    On Error GoTo 0
+End Sub
+
+Private Function FindTable(ByVal tableName As String) As ListObject
+    Dim ws As Worksheet
+    For Each ws In ThisWorkbook.Worksheets
+        On Error Resume Next
+        Set FindTable = ws.ListObjects(tableName)
+        On Error GoTo 0
+        If Not FindTable Is Nothing Then Exit Function
+    Next ws
+End Function
+
+Public Sub EnsureColumns(ByVal tableName As String, ByVal requiredHeaders As Variant)
+    Dim lo As ListObject
+    Set lo = FindTable(tableName)
+    If lo Is Nothing Then Exit Sub
+    EnsureHeaders lo, requiredHeaders
+End Sub
+
+Public Sub EnsureFolders(ByVal relativePaths As Variant)
+    Dim i As Long
+    For i = LBound(relativePaths) To UBound(relativePaths)
+        EnsureFolderPath ResolveWorkbookRelativePath(CStr(relativePaths(i)))
+    Next i
+End Sub
+
+Public Function SafeWriteRow(ByVal lo As ListObject, ByVal monthKey As String) As ListRow
+    If lo Is Nothing Then Exit Function
+    If lo.name = T_LEDGER And Len(monthKey) > 0 Then
+        If IsMonthClosed(monthKey) Then Err.Raise vbObjectError + 900, "SafeWriteRow", "Month is closed"
+    End If
+    Set SafeWriteRow = lo.ListRows.Add
+End Function
+
+Public Sub SafeUpdateRow(ByVal lo As ListObject, ByVal monthKey As String)
+    If lo Is Nothing Then Exit Sub
+    If lo.name = T_LEDGER And Len(monthKey) > 0 Then
+        If IsMonthClosed(monthKey) Then Err.Raise vbObjectError + 901, "SafeUpdateRow", "Month is closed"
+    End If
+End Sub
+
 Private Sub EnsureSheet(ByVal sheetName As String, ByVal vis As XlSheetVisibility)
     Dim ws As Worksheet
     On Error Resume Next
@@ -551,6 +776,16 @@ Private Sub EnsureSheet(ByVal sheetName As String, ByVal vis As XlSheetVisibilit
     End If
     ws.Visible = vis
 End Sub
+
+Public Function GetOrCreateSheet(ByVal sheetName As String, ByVal veryHidden As Boolean) As Worksheet
+    EnsureSheet sheetName, IIf(veryHidden, xlSheetVeryHidden, xlSheetVisible)
+    Set GetOrCreateSheet = GetSheet(sheetName)
+End Function
+
+Public Function GetOrCreateTable(ByVal ws As Worksheet, ByVal tableName As String, ByVal headers As Variant) As ListObject
+    EnsureTable ws, tableName, headers, 1, 1, False
+    Set GetOrCreateTable = ws.ListObjects(tableName)
+End Function
 
 Private Function GetTable(ByVal sheetName As String, ByVal tableName As String) As ListObject
     Dim ws As Worksheet: Set ws = GetSheet(sheetName)
@@ -605,6 +840,19 @@ Private Sub EnsureHeaders(ByVal lo As ListObject, ByVal headers As Variant)
             lo.ListColumns.Add.name = CStr(headers(i))
         End If
     Next i
+End Sub
+
+Private Function ColumnExists(ByVal lo As ListObject, ByVal columnName As String) As Boolean
+    On Error Resume Next
+    ColumnExists = Not lo.ListColumns(columnName) Is Nothing
+    On Error GoTo 0
+End Function
+
+Private Sub SetIfExists(ByVal lo As ListObject, ByVal lr As ListRow, ByVal columnName As String, ByVal value As Variant)
+    If lo Is Nothing Then Exit Sub
+    If lr Is Nothing Then Exit Sub
+    If Not ColumnExists(lo, columnName) Then Exit Sub
+    lr.Range.Cells(1, lo.ListColumns(columnName).Index).value = value
 End Sub
 
 Private Sub AppendListValue(ByVal lo As ListObject, ByVal colIndex As Long, ByVal value As String)
@@ -688,6 +936,14 @@ Public Function MonthKeyFromDate(ByVal d As Date) As String
 EH:
     HandleError "MonthKeyFromDate", Err, ""
     MonthKeyFromDate = ""
+End Function
+
+Public Function MonthKeyForDate(ByVal d As Date) As String
+    MonthKeyForDate = MonthKeyFromDate(d)
+End Function
+
+Public Function FiscalYearForDate(ByVal d As Date) As Long
+    FiscalYearForDate = FiscalYearForMonthKey(MonthKeyFromDate(d))
 End Function
 
 Private Function NzStr(ByVal v As Variant, Optional ByVal fallback As String = "") As String
@@ -806,6 +1062,9 @@ Public Function AddLedgerEntry( _
     lr.Range.Cells(1, lo.ListColumns("SourceType").Index).value = sourceType
     lr.Range.Cells(1, lo.ListColumns("SourceName").Index).value = sourceName
 
+    If ColumnExists(lo, "MemberID") Then
+        lr.Range.Cells(1, lo.ListColumns("MemberID").Index).value = FindMemberIdByEmail(memberEmail)
+    End If
     lr.Range.Cells(1, lo.ListColumns("MemberName").Index).value = memberName
     lr.Range.Cells(1, lo.ListColumns("MemberEmail").Index).value = memberEmail
     lr.Range.Cells(1, lo.ListColumns("Memo").Index).value = memo
@@ -1310,7 +1569,7 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
     ws.Range("B37").value = ytdExp
     ws.Range("B38").value = ytdInc - ytdExp
 
-    Dim ytdBudgetVar As Double: ytdBudgetVar = budgetVarYTD(monthKey)
+    Dim ytdBudgetVar As Double: ytdBudgetVar = BudgetVarYTDValue(monthKey)
     ws.Range("B39").value = ytdBudgetVar
 
     ws.Columns("A:H").AutoFit
@@ -1325,7 +1584,7 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
     ws.ExportAsFixedFormat Type:=xlTypePDF, Filename:=pdfPath, Quality:=xlQualityStandard, _
                            IncludeDocProperties:=True, IgnorePrintAreas:=False, OpenAfterPublish:=False
 
-    ArchiveBoardPacketSnapshot monthKey, ws
+    ArchiveBoardPacketSnapshot monthKey, ws, pdfPath
 
     ws.Visible = oldVis
     AuditLog "GenerateMonthlyPacket", "", pdfPath
@@ -1339,7 +1598,7 @@ EH:
     Resume CleanExit
 End Sub
 
-Private Sub ArchiveBoardPacketSnapshot(ByVal monthKey As String, ByVal wsReport As Worksheet)
+Private Sub ArchiveBoardPacketSnapshot(ByVal monthKey As String, ByVal wsReport As Worksheet, ByVal pdfPath As String)
     Dim archWs As Worksheet: Set archWs = GetSheet(SH_ARCHIVE)
     Dim archLo As ListObject: Set archLo = archWs.ListObjects("ARCH_BoardPackets")
     Dim lr As ListRow: Set lr = archLo.ListRows.Add
@@ -1347,6 +1606,8 @@ Private Sub ArchiveBoardPacketSnapshot(ByVal monthKey As String, ByVal wsReport 
     lr.Range.Cells(1, archLo.ListColumns("MonthKey").Index).value = monthKey
     lr.Range.Cells(1, archLo.ListColumns("FiscalYear").Index).value = FiscalYearForMonthKey(monthKey)
     lr.Range.Cells(1, archLo.ListColumns("GeneratedAt").Index).value = Now
+    lr.Range.Cells(1, archLo.ListColumns("GeneratedBy").Index).value = Application.UserName
+    lr.Range.Cells(1, archLo.ListColumns("PdfPath").Index).value = pdfPath
     lr.Range.Cells(1, archLo.ListColumns("SnapshotRange").Index).value = "ARCH_BP_" & Replace(monthKey, "-", "_") & "!A1:H45"
 
     Dim snapName As String: snapName = "ARCH_BP_" & Replace(monthKey, "-", "_")
@@ -1365,6 +1626,7 @@ Private Sub ArchiveBoardPacketSnapshot(ByVal monthKey As String, ByVal wsReport 
     snapWs.Range("A1").PasteSpecial xlPasteValues
     snapWs.Range("A1").PasteSpecial xlPasteFormats
     Application.CutCopyMode = False
+    lr.Range.Cells(1, archLo.ListColumns("SnapshotHash").Index).value = HashFile(pdfPath)
     snapWs.Visible = xlSheetVeryHidden
 End Sub
 
@@ -1512,7 +1774,7 @@ End Function
 Private Sub WriteEventRollup(ByVal ws As Worksheet, ByVal monthKey As String)
     ws.Range("A26:D34").ClearContents
 
-    Dim evLo As ListObject: Set evLo = GetTable(SH_LOOKUPS, T_EVENTS)
+    Dim evLo As ListObject: Set evLo = GetTable(SH_LOOKUPS, T_EVENTS_LIST)
     If evLo.DataBodyRange Is Nothing Then Exit Sub
 
     Dim r As Long: r = 26
@@ -1596,7 +1858,7 @@ EH:
     HandleError "SetBudget", Err, monthKey & "|" & category
 End Sub
 
-Public Function budgetVarYTD(ByVal monthKey As String) As Double
+Public Function BudgetVarYTDValue(ByVal monthKey As String) As Double
     On Error GoTo EH
     Dim startKey As String: startKey = FiscalYearStartMonthKey(monthKey)
     Dim cur As String: cur = startKey
@@ -1607,11 +1869,11 @@ Public Function budgetVarYTD(ByVal monthKey As String) As Double
         cur = MonthKeyAdd(cur, 1)
     Loop
 
-    budgetVarYTD = total
+    BudgetVarYTDValue = total
     Exit Function
 EH:
-    HandleError "BudgetVarYTD", Err, monthKey
-    budgetVarYTD = 0#
+    HandleError "BudgetVarYTDValue", Err, monthKey
+    BudgetVarYTDValue = 0#
 End Function
 
 Private Function BudgetVarMonthValue(ByVal monthKey As String) As Double
@@ -1745,7 +2007,7 @@ Public Sub GetDashboardMetrics(ByVal monthKey As String, ByVal eventFilter As St
     charityHeld = CharityHeldYTD(monthKey)
 
     budgetVarMonth = BudgetVarMonthValue(monthKey)
-    budgetVarYTD = budgetVarYTD(monthKey)
+    budgetVarYTD = BudgetVarYTDValue(monthKey)
     Exit Sub
 EH:
     HandleError "GetDashboardMetrics", Err, monthKey
@@ -1779,6 +2041,9 @@ Public Function CreateMeeting(ByVal meetingDate As Date, ByVal scribe As String,
     lr.Range.Cells(1, lo.ListColumns("EndTime").Index).value = ""
     lr.Range.Cells(1, lo.ListColumns("Scribe").Index).value = scribe
     lr.Range.Cells(1, lo.ListColumns("Location").Index).value = location
+    lr.Range.Cells(1, lo.ListColumns("MeetingType").Index).value = "Regular"
+    lr.Range.Cells(1, lo.ListColumns("OpenSessionFlag").Index).value = True
+    lr.Range.Cells(1, lo.ListColumns("RemoteAllowedFlag").Index).value = False
     lr.Range.Cells(1, lo.ListColumns("MinutesDocPath").Index).value = docPath
     lr.Range.Cells(1, lo.ListColumns("MinutesPdfPath").Index).value = ""
     lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
@@ -1969,13 +2234,23 @@ Public Sub UpsertMember(ByVal memberName As String, ByVal memberEmail As String,
     If rowIdx = 0 Then
         Dim lr As ListRow: Set lr = lo.ListRows.Add
         rowIdx = lr.Index
-        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberID").Index).value = "MBR-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+        If Len(memberEmail) > 0 Then
+            lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberID").Index).value = "MBR-" & LCase$(memberEmail)
+        Else
+            lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberID").Index).value = "MBR-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+        End If
     End If
 
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberName").Index).value = memberName
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberEmail").Index).value = memberEmail
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MembershipType").Index).value = membershipType
     If IsDate(joinedDate) Then lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("JoinedDate").Index).value = CDate(joinedDate)
+    If ColumnExists(lo, "Status") And Len(CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Status").Index).value)) = 0 Then
+        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Status").Index).value = IIf(duesPaid, "Active", "ApprovedPendingDues")
+    End If
+    If ColumnExists(lo, "RenewalIntervalMonths") Then
+        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("RenewalIntervalMonths").Index).value = CLng(GetConfigValue(CFG_RENEWAL_INTERVAL, "12"))
+    End If
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DuesPaidFlag").Index).value = IIf(duesPaid, "Y", "N")
     If IsDate(duesPaidDate) Then lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DuesPaidDate").Index).value = CDate(duesPaidDate)
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DuesAmount").Index).value = duesAmount
@@ -1988,6 +2263,21 @@ Public Sub UpsertMember(ByVal memberName As String, ByVal memberEmail As String,
 EH:
     HandleError "UpsertMember", Err, memberEmail
 End Sub
+
+Private Function FindMemberIdByEmail(ByVal memberEmail As String) As String
+    FindMemberIdByEmail = ""
+    If Len(memberEmail) = 0 Then Exit Function
+    Dim lo As ListObject: Set lo = GetTable(SH_MEMBERS, T_MEMBERS)
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    Dim r As Range
+    For Each r In lo.ListColumns("MemberEmail").DataBodyRange.Cells
+        If LCase$(CStr(r.value)) = LCase$(memberEmail) Then
+            FindMemberIdByEmail = CStr(r.Offset(0, lo.ListColumns("MemberID").Index - lo.ListColumns("MemberEmail").Index).value)
+            Exit Function
+        End If
+    Next r
+End Function
 
 Public Function CalculateRenewalDate(ByVal duesPaidDate As Variant) As Variant
     On Error GoTo EH
@@ -2046,7 +2336,7 @@ Public Sub ImportCsvRaw(ByVal sourceName As String, ByVal filePath As String)
     batchId = "IMP-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
 
     Dim fileHash As String
-    fileHash = CStr(FileLen(filePath)) & "-" & Format$(FileDateTime(filePath), "yyyymmddhhnnss")
+    fileHash = HashFile(filePath)
 
     Dim rawTable As ListObject
     If LCase$(sourceName) = "zeffy" Then
@@ -2073,11 +2363,13 @@ Public Sub ImportCsvRaw(ByVal sourceName As String, ByVal filePath As String)
     Set mapDict = GetImportMapping(sourceName)
 
     Dim line As String
+    Dim rowNum As Long
     Do While Not EOF(f)
         Line Input #f, line
         If Len(Trim$(line)) = 0 Then GoTo ContinueRow
 
-        Dim rowHash As String: rowHash = CStr(CLng(Crc32(line)))
+        rowNum = rowNum + 1
+        Dim rowHash As String: rowHash = HashRow(line)
         Dim data() As String
         If hasHeader Then data = ParseCsvLine(line)
 
@@ -2092,9 +2384,12 @@ Public Sub ImportCsvRaw(ByVal sourceName As String, ByVal filePath As String)
         End If
 
         Dim lr As ListRow: Set lr = rawTable.ListRows.Add
-        lr.Range.Cells(1, rawTable.ListColumns("ImportBatchID").Index).value = batchId
-        lr.Range.Cells(1, rawTable.ListColumns("RowHash").Index).value = rowHash
-        lr.Range.Cells(1, rawTable.ListColumns("RawData").Index).value = line
+        SetIfExists rawTable, lr, "ImportBatchID", batchId
+        SetIfExists rawTable, lr, "RowNum", rowNum
+        SetIfExists rawTable, lr, "RawLine", line
+        SetIfExists rawTable, lr, "ExternalTxnID", extId
+        SetIfExists rawTable, lr, "RowHash", rowHash
+        SetIfExists rawTable, lr, "CreatedAt", Now
         rowCount = rowCount + 1
 
         If mapDict.count > 0 Then
@@ -2114,6 +2409,11 @@ ContinueRow:
     lrLog.Range.Cells(1, log.ListColumns("RowCount").Index).value = rowCount
     lrLog.Range.Cells(1, log.ListColumns("Notes").Index).value = "Raw staging import"
     lrLog.Range.Cells(1, log.ListColumns("Status").Index).value = "OK"
+
+    Dim archivePath As String
+    archivePath = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ARCHIVE, ".\\Imports\\Archive\\")) & _
+        sourceName & "_" & batchId & "_" & Dir(filePath)
+    FileCopy filePath, archivePath
 
     AuditLog "ImportCsvRaw", batchId, sourceName & " rows=" & CStr(rowCount)
     GoTo CleanExit
@@ -2196,11 +2496,23 @@ Private Function GetImportMapping(ByVal sourceName As String) As Object
 
     Dim i As Long
     For i = 1 To mapTable.ListRows.count
-        Dim src As String: src = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("SourceColumn").Index).value)
-        Dim tgt As String: tgt = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("TargetColumn").Index).value)
-        If Len(src) > 0 And Len(tgt) > 0 Then
-            dict(LCase$(tgt)) = src
+        Dim activeFlag As String: activeFlag = "TRUE"
+        If ColumnExists(mapTable, "ActiveFlag") Then
+            activeFlag = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("ActiveFlag").Index).value)
         End If
+        If LCase$(activeFlag) = "false" Then GoTo ContinueMap
+
+        Dim src As String: src = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("SourceColumn").Index).value)
+        Dim tgtTable As String: tgtTable = ""
+        If ColumnExists(mapTable, "TargetTable") Then
+            tgtTable = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("TargetTable").Index).value)
+        End If
+        Dim tgtCol As String: tgtCol = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("TargetColumn").Index).value)
+        If Len(tgtTable) = 0 Then tgtTable = T_LEDGER
+        If Len(src) > 0 And Len(tgtCol) > 0 Then
+            dict(LCase$(tgtTable & "|" & tgtCol)) = src
+        End If
+ContinueMap:
     Next i
 
     Set GetImportMapping = dict
@@ -2209,8 +2521,9 @@ End Function
 Private Function ExtractMappedValue(ByVal mapDict As Object, ByVal headers() As String, ByVal data() As String, ByVal targetCol As String) As String
     Dim srcCol As String
     ExtractMappedValue = ""
-    If mapDict.Exists(LCase$(targetCol)) Then
-        srcCol = mapDict(LCase$(targetCol))
+    Dim key As String: key = LCase$(T_LEDGER & "|" & targetCol)
+    If mapDict.Exists(key) Then
+        srcCol = mapDict(key)
         Dim idx As Long: idx = HeaderIndex(headers, srcCol)
         If idx >= 0 And idx <= UBound(data) Then
             ExtractMappedValue = data(idx)
@@ -2357,6 +2670,302 @@ Private Function Crc32(ByVal text As String) As Long
 End Function
 
 '========================
+' Compliance
+'========================
+
+Public Function AddComplianceEvent(ByVal eventName As String, ByVal eventDate As Date, ByVal location As String, _
+                                   ByVal eventType As String, ByVal ageRestriction As String, _
+                                   ByVal charityPartner As String, ByVal purpose As String, _
+                                   ByVal safetyLead As String, ByVal financeLead As String, _
+                                   ByVal paymentMethods As String, Optional ByVal approvalStatus As String = "Draft") As String
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_EVENTS)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    Dim eventId As String
+    eventId = "EVT-" & Format$(eventDate, "yyyymmdd") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    lr.Range.Cells(1, lo.ListColumns("EventID").Index).value = eventId
+    lr.Range.Cells(1, lo.ListColumns("EventName").Index).value = eventName
+    lr.Range.Cells(1, lo.ListColumns("EventDate").Index).value = eventDate
+    lr.Range.Cells(1, lo.ListColumns("Location").Index).value = location
+    lr.Range.Cells(1, lo.ListColumns("EventType").Index).value = eventType
+    lr.Range.Cells(1, lo.ListColumns("AgeRestriction").Index).value = ageRestriction
+    lr.Range.Cells(1, lo.ListColumns("CharityPartner").Index).value = charityPartner
+    lr.Range.Cells(1, lo.ListColumns("Purpose").Index).value = purpose
+    lr.Range.Cells(1, lo.ListColumns("SafetyLead").Index).value = safetyLead
+    lr.Range.Cells(1, lo.ListColumns("FinanceLead").Index).value = financeLead
+    lr.Range.Cells(1, lo.ListColumns("PaymentMethodsOnSite").Index).value = paymentMethods
+    lr.Range.Cells(1, lo.ListColumns("ApprovalStatus").Index).value = approvalStatus
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+    lr.Range.Cells(1, lo.ListColumns("UpdatedAt").Index).value = Now
+
+    AuditLog "ComplianceEvent", eventId, eventName
+    AddComplianceEvent = eventId
+    Exit Function
+EH:
+    HandleError "AddComplianceEvent", Err, eventName
+    AddComplianceEvent = ""
+End Function
+
+Public Function AddRefundRequest(ByVal requestDate As Date, ByVal requesterName As String, ByVal requesterEmail As String, _
+                                 ByVal amountRequested As Double, ByVal reason As String, _
+                                 Optional ByVal txnId As String = "", Optional ByVal eventId As String = "") As String
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_REFUNDS)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    Dim refundId As String
+    refundId = "RFD-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    lr.Range.Cells(1, lo.ListColumns("RefundID").Index).value = refundId
+    lr.Range.Cells(1, lo.ListColumns("RequestDate").Index).value = requestDate
+    lr.Range.Cells(1, lo.ListColumns("RequesterName").Index).value = requesterName
+    lr.Range.Cells(1, lo.ListColumns("RequesterEmail").Index).value = requesterEmail
+    lr.Range.Cells(1, lo.ListColumns("TxnID").Index).value = txnId
+    lr.Range.Cells(1, lo.ListColumns("EventID").Index).value = eventId
+    lr.Range.Cells(1, lo.ListColumns("AmountRequested").Index).value = amountRequested
+    lr.Range.Cells(1, lo.ListColumns("Reason").Index).value = reason
+    lr.Range.Cells(1, lo.ListColumns("Status").Index).value = "Pending"
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+    lr.Range.Cells(1, lo.ListColumns("UpdatedAt").Index).value = Now
+
+    AuditLog "RefundRequest", refundId, requesterName
+    AddRefundRequest = refundId
+    Exit Function
+EH:
+    HandleError "AddRefundRequest", Err, requesterName
+    AddRefundRequest = ""
+End Function
+
+Public Sub ApproveRefundRequest(ByVal refundId As String, ByVal approvedBy As String)
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_REFUNDS)
+    Dim rowIdx As Long: rowIdx = FindRowIndex(lo, "RefundID", refundId)
+    If rowIdx = 0 Then Err.Raise vbObjectError + 820, "ApproveRefundRequest", "Refund not found"
+
+    Dim requesterName As String
+    requesterName = CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("RequesterName").Index).value)
+    Dim allowSelf As Boolean
+    allowSelf = (LCase$(GetConfigValue(CFG_REFUND_APPROVAL_SELF_OK, "FALSE")) = "true")
+    If Not allowSelf And LCase$(requesterName) = LCase$(approvedBy) Then
+        Err.Raise vbObjectError + 821, "ApproveRefundRequest", "Self-approval not allowed"
+    End If
+
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Status").Index).value = "Approved"
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ApprovedBy").Index).value = approvedBy
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ApprovedAt").Index).value = Now
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("UpdatedAt").Index).value = Now
+    AuditLog "RefundApproved", refundId, approvedBy
+    Exit Sub
+EH:
+    HandleError "ApproveRefundRequest", Err, refundId
+End Sub
+
+Public Function AddIncidentComplaint(ByVal caseType As String, ByVal reportDate As Date, ByVal reportedByName As String, _
+                                     ByVal reportedByContact As String, ByVal severity As String, _
+                                     Optional ByVal eventId As String = "", Optional ByVal summary As String = "", _
+                                     Optional ByVal sscConsentFlag As String = "N") As String
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_INCIDENTS)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    Dim caseId As String
+    caseId = "CASE-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    lr.Range.Cells(1, lo.ListColumns("CaseID").Index).value = caseId
+    lr.Range.Cells(1, lo.ListColumns("CaseType").Index).value = caseType
+    lr.Range.Cells(1, lo.ListColumns("ReportDate").Index).value = reportDate
+    lr.Range.Cells(1, lo.ListColumns("ReportedByName").Index).value = reportedByName
+    lr.Range.Cells(1, lo.ListColumns("ReportedByContact").Index).value = reportedByContact
+    lr.Range.Cells(1, lo.ListColumns("EventID").Index).value = eventId
+    lr.Range.Cells(1, lo.ListColumns("Summary").Index).value = summary
+    lr.Range.Cells(1, lo.ListColumns("Severity").Index).value = severity
+    lr.Range.Cells(1, lo.ListColumns("SSC_ConsentRelatedFlag").Index).value = sscConsentFlag
+    lr.Range.Cells(1, lo.ListColumns("Status").Index).value = "Open"
+    lr.Range.Cells(1, lo.ListColumns("RetentionUntil").Index).value = RetentionUntilForIncident(reportDate, severity, sscConsentFlag)
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+    lr.Range.Cells(1, lo.ListColumns("UpdatedAt").Index).value = Now
+
+    AuditLog "IncidentCase", caseId, reportedByName
+    AddIncidentComplaint = caseId
+    Exit Function
+EH:
+    HandleError "AddIncidentComplaint", Err, reportedByName
+    AddIncidentComplaint = ""
+End Function
+
+Public Function AddOutcome(ByVal caseId As String, ByVal outcomeDate As Date, ByVal findings As String, _
+                           ByVal consequenceType As String, Optional ByVal consequenceDetails As String = "") As String
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_OUTCOMES)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    Dim outcomeId As String
+    outcomeId = "OUT-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    lr.Range.Cells(1, lo.ListColumns("OutcomeID").Index).value = outcomeId
+    lr.Range.Cells(1, lo.ListColumns("CaseID").Index).value = caseId
+    lr.Range.Cells(1, lo.ListColumns("OutcomeDate").Index).value = outcomeDate
+    lr.Range.Cells(1, lo.ListColumns("Findings").Index).value = findings
+    lr.Range.Cells(1, lo.ListColumns("ConsequenceType").Index).value = consequenceType
+    lr.Range.Cells(1, lo.ListColumns("ConsequenceDetails").Index).value = consequenceDetails
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+
+    LinkOutcomeToCase caseId, outcomeId
+    AuditLog "OutcomeCreated", outcomeId, caseId
+    AddOutcome = outcomeId
+    Exit Function
+EH:
+    HandleError "AddOutcome", Err, caseId
+    AddOutcome = ""
+End Function
+
+Public Function AddAppeal(ByVal outcomeId As String, ByVal appealDate As Date, ByVal appellantName As String, ByVal grounds As String) As String
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_APPEALS)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    Dim appealId As String
+    appealId = "APL-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    lr.Range.Cells(1, lo.ListColumns("AppealID").Index).value = appealId
+    lr.Range.Cells(1, lo.ListColumns("OutcomeID").Index).value = outcomeId
+    lr.Range.Cells(1, lo.ListColumns("AppealDate").Index).value = appealDate
+    lr.Range.Cells(1, lo.ListColumns("AppellantName").Index).value = appellantName
+    lr.Range.Cells(1, lo.ListColumns("Grounds").Index).value = grounds
+    lr.Range.Cells(1, lo.ListColumns("Status").Index).value = "Pending"
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+
+    AuditLog "AppealCreated", appealId, outcomeId
+    AddAppeal = appealId
+    Exit Function
+EH:
+    HandleError "AddAppeal", Err, outcomeId
+    AddAppeal = ""
+End Function
+
+Public Sub ExportEventInfoPdf(ByVal eventId As String)
+    ExportCompliancePdf T_COMPLIANCE_EVENTS, "EventID", eventId, "Event Info"
+End Sub
+
+Public Sub ExportRefundPdf(ByVal refundId As String)
+    ExportCompliancePdf T_COMPLIANCE_REFUNDS, "RefundID", refundId, "Refund Request"
+End Sub
+
+Public Sub ExportIncidentPdf(ByVal caseId As String)
+    ExportCompliancePdf T_COMPLIANCE_INCIDENTS, "CaseID", caseId, "Incident/Complaint"
+End Sub
+
+Public Sub ExportGiveawayPdf(ByVal giveawayId As String)
+    ExportCompliancePdf T_COMPLIANCE_GIVEAWAYS, "GiveawayID", giveawayId, "Giveaway"
+End Sub
+
+Private Sub ExportCompliancePdf(ByVal tableName As String, ByVal idColumn As String, ByVal idValue As String, ByVal titlePrefix As String)
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, tableName)
+    Dim rowIdx As Long: rowIdx = FindRowIndex(lo, idColumn, idValue)
+    If rowIdx = 0 Then Err.Raise vbObjectError + 822, "ExportCompliancePdf", "Record not found"
+
+    Dim labels() As String
+    Dim values() As String
+    Dim i As Long
+    ReDim labels(1 To lo.ListColumns.count)
+    ReDim values(1 To lo.ListColumns.count)
+    For i = 1 To lo.ListColumns.count
+        labels(i) = lo.ListColumns(i).name
+        values(i) = CStr(lo.DataBodyRange.Cells(rowIdx, i).value)
+    Next i
+
+    WriteComplianceReport titlePrefix & " - " & idValue, labels, values
+
+    Dim pdfPath As String
+    pdfPath = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_COMPLIANCE_DOCS, ".\Compliance\Docs\")) & _
+        titlePrefix & "_" & idValue & ".pdf"
+    GetSheet(SH_COMPLIANCE_REPORT).ExportAsFixedFormat Type:=xlTypePDF, Filename:=pdfPath, _
+        Quality:=xlQualityStandard, IncludeDocProperties:=True, IgnorePrintAreas:=False, OpenAfterPublish:=False
+    AuditLog "ExportCompliancePdf", idValue, pdfPath
+    GoTo CleanExit
+EH:
+    HandleError "ExportCompliancePdf", Err, idValue
+CleanExit:
+    Application.EnableEvents = prevEV
+    Application.ScreenUpdating = prevSU
+End Sub
+
+Private Sub WriteComplianceReport(ByVal titleText As String, ByVal labels As Variant, ByVal values As Variant)
+    Dim ws As Worksheet: Set ws = GetSheet(SH_COMPLIANCE_REPORT)
+    ws.Cells.ClearContents
+    ws.Range("A1").value = titleText
+    ws.Range("A2").value = "Generated"
+    ws.Range("B2").value = Now
+
+    Dim i As Long
+    For i = LBound(labels) To UBound(labels)
+        ws.Cells(3 + i, 1).value = labels(i)
+        ws.Cells(3 + i, 2).value = values(i)
+    Next i
+    ws.Columns("A:B").ColumnWidth = 28
+End Sub
+
+Private Function RetentionUntilForIncident(ByVal reportDate As Date, ByVal severity As String, ByVal sscConsentFlag As String) As Date
+    Dim years As Long
+    If LCase$(severity) = "severe" Or LCase$(sscConsentFlag) = "y" Then
+        years = CLng(GetConfigValue(CFG_RETENTION_SEVERE, "7"))
+    Else
+        years = CLng(GetConfigValue(CFG_RETENTION_MINOR, "3"))
+    End If
+    RetentionUntilForIncident = DateAdd("yyyy", years, reportDate)
+End Function
+
+Private Function FindRowIndex(ByVal lo As ListObject, ByVal columnName As String, ByVal value As String) As Long
+    FindRowIndex = 0
+    If lo Is Nothing Then Exit Function
+    If lo.DataBodyRange Is Nothing Then Exit Function
+    Dim colIdx As Long: colIdx = lo.ListColumns(columnName).Index
+    Dim i As Long
+    For i = 1 To lo.ListRows.count
+        If CStr(lo.DataBodyRange.Cells(i, colIdx).value) = value Then
+            FindRowIndex = i
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Sub LinkOutcomeToCase(ByVal caseId As String, ByVal outcomeId As String)
+    Dim lo As ListObject: Set lo = GetTable(SH_COMPLIANCE, T_COMPLIANCE_INCIDENTS)
+    Dim rowIdx As Long: rowIdx = FindRowIndex(lo, "CaseID", caseId)
+    If rowIdx = 0 Then Exit Sub
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("OutcomeID").Index).value = outcomeId
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Status").Index).value = "Closed"
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("UpdatedAt").Index).value = Now
+End Sub
+
+Private Function HashFile(ByVal filePath As String) As String
+    On Error GoTo EH
+    Dim f As Integer: f = FreeFile
+    Dim fileText As String
+    Open filePath For Binary As #f
+    fileText = Space$(LOF(f))
+    Get #f, , fileText
+    Close #f
+    HashFile = CStr(CLng(Crc32(fileText)))
+    Exit Function
+EH:
+    HashFile = CStr(FileLen(filePath)) & "-" & Format$(FileDateTime(filePath), "yyyymmddhhnnss")
+End Function
+
+Private Function HashRow(ByVal rowText As String) As String
+    HashRow = CStr(CLng(Crc32(rowText)))
+End Function
+
+'========================
 ' Self test
 '========================
 
@@ -2373,6 +2982,9 @@ Private Function SelfTestReport() As String
     msg = msg & CheckTable(SH_AGENDA, T_AGENDA) & vbCrLf
     msg = msg & CheckTable(SH_IMPORTS, T_IMPORTLOG) & vbCrLf
     msg = msg & CheckTable(SH_ERRORLOG, T_ERRORLOG) & vbCrLf
+    msg = msg & CheckTable(SH_COMPLIANCE, T_COMPLIANCE_EVENTS) & vbCrLf
+    msg = msg & CheckTable(SH_COMPLIANCE, T_COMPLIANCE_REFUNDS) & vbCrLf
+    msg = msg & CheckTable(SH_COMPLIANCE, T_COMPLIANCE_INCIDENTS) & vbCrLf
 
     msg = msg & "Paths:" & vbCrLf
     msg = msg & "- Board packets: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_BOARDPACKETS, ".\BoardPackets\")) & vbCrLf
@@ -2382,6 +2994,7 @@ Private Function SelfTestReport() As String
     msg = msg & "- Agenda PDF: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\")) & vbCrLf
     msg = msg & "- Imports Zeffy: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\")) & vbCrLf
     msg = msg & "- Imports Blaze: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\")) & vbCrLf
+    msg = msg & "- Compliance Docs: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_COMPLIANCE_DOCS, ".\Compliance\Docs\")) & vbCrLf
     msg = msg & "Templates:" & vbCrLf
     msg = msg & "- Minutes template: " & TemplateStatus("TCPP Board Meeting Minutes Template.docx") & vbCrLf
     msg = msg & "- Agenda template: " & TemplateStatus("Template Meeting Agenda.docx") & vbCrLf

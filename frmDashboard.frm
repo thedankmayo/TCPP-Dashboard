@@ -249,7 +249,7 @@ End Sub
 Private Sub LoadEventList()
     cboEvent.Clear
     cboEvent.AddItem "(All)"
-    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Lookups").ListObjects("tblEvents")
+    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Lookups").ListObjects("tblEventsList")
     If Not lo.DataBodyRange Is Nothing Then
         Dim c As Range
         For Each c In lo.ListColumns(1).DataBodyRange.Cells
