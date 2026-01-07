@@ -9,14 +9,13 @@ Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = True
 Option Explicit
 
-Private Sub Workbook_Open()
+Public Sub Workbook_Open()
     On Error Resume Next
     modTCPPv2.InitializeTool False
     modTCPPv2.ShowDashboard
 End Sub
 
-Private Sub Workbook_BeforeClose(Cancel As Boolean)
+Public Sub Workbook_BeforeClose(Cancel As Boolean)
     On Error Resume Next
     modTCPPv2.CleanupOnClose
 End Sub
-
