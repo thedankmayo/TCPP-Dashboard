@@ -1,10 +1,10 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmReceipt 
    Caption         =   "UserForm1"
-   ClientHeight    =   7275
+   ClientHeight    =   4090
    ClientLeft      =   120
    ClientTop       =   465
-   ClientWidth     =   12165
+   ClientWidth     =   9630
    OleObjectBlob   =   "frmReceipt.frx":0000
    StartUpPosition =   1  'CenterOwner
 End
@@ -22,12 +22,17 @@ Public Sub InitForMonth(ByVal monthKey As String)
 End Sub
 
 Private Sub UserForm_Initialize()
+    On Error GoTo EH
+
     LoadMonthList
     If Len(mMonthKey) = 0 Then mMonthKey = Format(Date, "yyyy-mm")
     cboMonth.value = mMonthKey
     lstTxns.ColumnCount = 6
     lstTxns.ColumnWidths = "160;60;70;160;120;90"
     RefreshList
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmReceipt.Initialize", Err, ""
 End Sub
 
 Private Sub cboMonth_Change()
@@ -37,23 +42,37 @@ End Sub
 
 Private Sub cmdAttach_Click()
     If lstTxns.ListIndex < 0 Then Exit Sub
+    On Error GoTo EH
+
     Dim txnId As String: txnId = CStr(lstTxns.List(lstTxns.ListIndex, 0))
-    On Error Resume Next
-    modTCPPv2.AttachReceiptToTxn txnId
+    Dim vendor As String: vendor = InputBox("Vendor (optional):", "Receipt Vendor")
+    Dim storage As String: storage = InputBox("Storage location/path (optional):", "Receipt Storage")
+    Dim notes As String: notes = InputBox("Notes (optional):", "Receipt Notes")
+
+    modTCPPv2.CreateReceiptInfo txnId, vendor, Date, Date, storage, notes
     RefreshList
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmReceipt.Attach", Err, txnId
 End Sub
 
 Private Sub cmdWaive_Click()
     If lstTxns.ListIndex < 0 Then Exit Sub
+    On Error GoTo EH
     Dim txnId As String: txnId = CStr(lstTxns.List(lstTxns.ListIndex, 0))
+    If Len(Trim$(txtWaiveReason.value)) = 0 Then
+        MsgBox "Waive reason is required.", vbExclamation, "Receipt Waiver"
+        Exit Sub
+    End If
     modTCPPv2.WaiveReceipt txnId, Trim$(txtWaiveReason.value)
     RefreshList
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmReceipt.Waive", Err, txnId
 End Sub
 
 Private Sub cmdOpenFile_Click()
     If lstTxns.ListIndex < 0 Then Exit Sub
-    Dim pathOrLabel As String
-    pathOrLabel = "" ' hyperlink display stored in ledger; open is optional
 End Sub
 
 Private Sub cmdClose_Click()
@@ -73,24 +92,33 @@ Private Sub RefreshList()
     Dim idCol As Long: idCol = lo.ListColumns("TxnID").Index
     Dim dCol As Long: dCol = lo.ListColumns("Date").Index
     Dim netCol As Long: netCol = lo.ListColumns("Net").Index
-    Dim payeeCol As Long: payeeCol = lo.ListColumns("PayeeOrSource").Index
+    Dim srcCol As Long: srcCol = lo.ListColumns("SourceName").Index
     Dim catCol As Long: catCol = lo.ListColumns("Category").Index
     Dim rrCol As Long: rrCol = lo.ListColumns("ReceiptRequired").Index
     Dim rsCol As Long: rsCol = lo.ListColumns("ReceiptStatus").Index
+    Dim evCol As Long: evCol = lo.ListColumns("Event").Index
+    Dim chCol As Long: chCol = lo.ListColumns("Charity").Index
 
     For i = 1 To lo.ListRows.count
         If CStr(lo.DataBodyRange.Cells(i, mkCol).value) = mMonthKey Then
+            If modTCPPv2.gEventFilter <> "(All)" Then
+                If CStr(lo.DataBodyRange.Cells(i, evCol).value) <> modTCPPv2.gEventFilter Then GoTo ContinueRow
+            End If
+            If modTCPPv2.gCharityFilter <> "(All)" Then
+                If CStr(lo.DataBodyRange.Cells(i, chCol).value) <> modTCPPv2.gCharityFilter Then GoTo ContinueRow
+            End If
             Dim rr As Boolean: rr = CBool(lo.DataBodyRange.Cells(i, rrCol).value)
             Dim rs As String: rs = CStr(lo.DataBodyRange.Cells(i, rsCol).value)
-            If rr And rs <> "Linked" And rs <> "Waived" Then
+            If rr And rs <> "Recorded" And rs <> "Waived" Then
                 lstTxns.AddItem CStr(lo.DataBodyRange.Cells(i, idCol).value)
                 lstTxns.List(lstTxns.ListCount - 1, 1) = Format(CDate(lo.DataBodyRange.Cells(i, dCol).value), "m/d")
                 lstTxns.List(lstTxns.ListCount - 1, 2) = Format(CDbl(lo.DataBodyRange.Cells(i, netCol).value), "0.00")
-                lstTxns.List(lstTxns.ListCount - 1, 3) = CStr(lo.DataBodyRange.Cells(i, payeeCol).value)
+                lstTxns.List(lstTxns.ListCount - 1, 3) = CStr(lo.DataBodyRange.Cells(i, srcCol).value)
                 lstTxns.List(lstTxns.ListCount - 1, 4) = CStr(lo.DataBodyRange.Cells(i, catCol).value)
                 lstTxns.List(lstTxns.ListCount - 1, 5) = rs
             End If
         End If
+ContinueRow:
     Next i
 End Sub
 
@@ -102,4 +130,3 @@ Private Sub LoadMonthList()
         cboMonth.AddItem Format(DateAdd("m", i, d), "yyyy-mm")
     Next i
 End Sub
-

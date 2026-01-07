@@ -1,10 +1,10 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmDashboard 
    Caption         =   "UserForm1"
-   ClientHeight    =   12705
-   ClientLeft      =   120
-   ClientTop       =   465
-   ClientWidth     =   16425
+   ClientHeight    =   7160
+   ClientLeft      =   105
+   ClientTop       =   450
+   ClientWidth     =   12045
    OleObjectBlob   =   "frmDashboard.frx":0000
    StartUpPosition =   1  'CenterOwner
 End
@@ -16,13 +16,15 @@ Attribute VB_Exposed = False
 Option Explicit
 
 Private Sub UserForm_Initialize()
+    On Error GoTo EH
+
     modTCPPv2.InitializeTool False
+    modTCPPv2.ApplyTheme Me
 
     LoadMonthList
     LoadEventList
     LoadCharityList
 
-    ' defaults
     cboMonth.value = modTCPPv2.gMonthKey
     cboEvent.value = modTCPPv2.gEventFilter
     cboCharity.value = modTCPPv2.gCharityFilter
@@ -31,6 +33,9 @@ Private Sub UserForm_Initialize()
     lstExceptions.ColumnWidths = "220;60"
 
     RefreshDashboard
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmDashboard.Initialize", Err, ""
 End Sub
 
 Private Sub cmdRefreshDashboard_Click()
@@ -65,16 +70,16 @@ Private Sub cmdIncomeEvent_Click()
 End Sub
 
 Private Sub cmdExpense_Click()
-    OpenEntry "Expense", ""
+    OpenEntry "Expense", "Operations"
 End Sub
 
 Private Sub cmdReimbursement_Click()
-    OpenEntry "Reimbursement", ""
+    OpenEntry "Reimbursement", "Operations"
 End Sub
 
 Private Sub cmdAttachFixReceipt_Click()
-    frmReceipt.InitForMonth modTCPPv2.gMonthKey
-    frmReceipt.Show vbModal
+    frmReceiptInfo.InitForMonth modTCPPv2.gMonthKey
+    frmReceiptInfo.Show vbModal
     RefreshDashboard
 End Sub
 
@@ -85,13 +90,9 @@ Private Sub cmdReconcileMonth_Click()
 End Sub
 
 Private Sub cmdCloseMonth_Click()
-    On Error GoTo EH
-    modTCPPv2.CloseMonth modTCPPv2.gMonthKey
-    lblStatusLastAction.caption = "Last action: Closed " & modTCPPv2.gMonthKey & " @ " & Format(Now, "yyyy-mm-dd hh:nn")
+    frmCloseMonth.InitForMonth modTCPPv2.gMonthKey
+    frmCloseMonth.Show vbModal
     RefreshDashboard
-    Exit Sub
-EH:
-    lblStatusLastAction.caption = "Last action: Close blocked (" & Replace(Err.Description, vbCrLf, " | ") & ")"
 End Sub
 
 Private Sub cmdMonthlyBoardPacket_Click()
@@ -101,7 +102,7 @@ Private Sub cmdMonthlyBoardPacket_Click()
     RefreshDashboard
     Exit Sub
 EH:
-    lblStatusLastAction.caption = "Last action: Board packet failed (" & Err.Description & ")"
+    modTCPPv2.HandleError "frmDashboard.BoardPacket", Err, modTCPPv2.gMonthKey
 End Sub
 
 Private Sub cmdBudget_Click()
@@ -115,6 +116,23 @@ Private Sub cmdManageLists_Click()
     LoadEventList
     LoadCharityList
     RefreshDashboard
+End Sub
+
+Private Sub cmdMembers_Click()
+    frmMembers.Show vbModal
+    RefreshDashboard
+End Sub
+
+Private Sub cmdMinutes_Click()
+    frmMinutesHub.Show vbModal
+End Sub
+
+Private Sub cmdAgenda_Click()
+    frmAgenda.Show vbModal
+End Sub
+
+Private Sub cmdImports_Click()
+    frmImports.Show vbModal
 End Sub
 
 Private Sub cmdSelfTest_Click()
@@ -153,7 +171,13 @@ Private Sub RefreshDashboard()
     modTCPPv2.gCharityFilter = NzCombo(cboCharity.value, "(All)")
 
     Dim unc As Long, mr As Long, mAmt As Double
+    Dim totalIncome As Double, totalExpense As Double, netChange As Double
+    Dim charityRaised As Double, charityPaid As Double, charityHeld As Double
+    Dim budgetVarMonth As Double, budgetVarYTD As Double
     modTCPPv2.GetExceptionCounts monthKey, unc, mr, mAmt
+    modTCPPv2.GetDashboardMetrics monthKey, modTCPPv2.gEventFilter, modTCPPv2.gCharityFilter, _
+        totalIncome, totalExpense, netChange, mr, mAmt, unc, charityRaised, charityPaid, charityHeld, _
+        budgetVarMonth, budgetVarYTD
 
     Dim reconOk As Boolean: reconOk = modTCPPv2.IsReconOk(monthKey)
     Dim closed As Boolean: closed = modTCPPv2.IsMonthClosed(monthKey)
@@ -162,27 +186,49 @@ Private Sub RefreshDashboard()
     lblStatusClosed.caption = "Closed: " & IIf(closed, "YES", "NO")
     lblStatusUncategorized.caption = "Uncategorized: " & CStr(unc)
     lblStatusMissingReceipts.caption = "Missing receipts: " & CStr(mr) & " ($" & Format(mAmt, "0.00") & ")"
-    lblStatusCharityHeld.caption = "Charity held (YTD): $" & Format(modTCPPv2.CharityHeldYTD(monthKey), "0.00")
-    lblStatusBudgetVarYTD.caption = "Budget variance (YTD $): $" & Format(BudgetVarTile(monthKey), "0.00")
+    lblStatusCharityHeld.caption = "Charity held (YTD): $" & Format(charityHeld, "0.00")
+    lblStatusBudgetVarYTD.caption = "Budget variance (YTD $): $" & Format(budgetVarYTD, "0.00")
+    lblStatusTotalIncome.caption = "Total Income (Net): $" & Format(totalIncome, "0.00")
+    lblStatusTotalExpense.caption = "Total Expenses (Net): $" & Format(totalExpense, "0.00")
+    lblStatusNetChange.caption = "Net Change: $" & Format(netChange, "0.00")
+    lblStatusCharityRaised.caption = "Charity Raised (Month): $" & Format(charityRaised, "0.00")
+    lblStatusCharityPaid.caption = "Charity Paid (Month): $" & Format(charityPaid, "0.00")
+    lblStatusBudgetVarMonth.caption = "Budget variance (Month $): $" & Format(budgetVarMonth, "0.00")
 
     BuildExceptionsList monthKey, unc, mr, mAmt, reconOk, closed
+
+    ApplyStatusColors reconOk, closed, unc, mr
 End Sub
 
-Private Function BudgetVarTile(ByVal monthKey As String) As Double
-    ' reuse report calc by generating ytd var from report sheet not required; keep lightweight:
-    ' return charity held logic exists; budget var computed within report generation; for dashboard, show 0 if budgets empty
-    BudgetVarTile = 0#
-    On Error Resume Next
-    ' approximate: compute via report macro without exporting
-    BudgetVarTile = 0#
-End Function
+Private Sub ApplyStatusColors(ByVal reconOk As Boolean, ByVal closed As Boolean, ByVal unc As Long, ByVal mr As Long)
+    ApplyStatusColor lblStatusRecon, reconOk
+    ApplyStatusColor lblStatusClosed, closed
+    ApplyStatusColor lblStatusUncategorized, (unc = 0)
+    ApplyStatusColor lblStatusMissingReceipts, (mr = 0)
+End Sub
+
+Private Sub ApplyStatusColor(ByVal lbl As MSForms.label, ByVal ok As Boolean)
+    If ok Then
+        lbl.BackColor = RGB(198, 239, 206)
+        lbl.ForeColor = RGB(0, 97, 0)
+    Else
+        lbl.BackColor = RGB(255, 199, 206)
+        lbl.ForeColor = RGB(156, 0, 6)
+    End If
+End Sub
 
 Private Sub BuildExceptionsList(ByVal monthKey As String, ByVal unc As Long, ByVal mr As Long, ByVal mAmt As Double, ByVal reconOk As Boolean, ByVal closed As Boolean)
+    Dim charityImbalance As Boolean, budgetOverrun As Boolean
+    Dim msg As String
+    msg = modTCPPv2.GateCheckMonth(monthKey, unc, mr, mAmt, reconOk, charityImbalance, budgetOverrun)
+
     lstExceptions.Clear
     If unc > 0 Then AddExceptionRow "Uncategorized", unc
     If mr > 0 Then AddExceptionRow "Missing Receipt", mr
     If Not reconOk Then AddExceptionRow "Not Reconciled", 1
     If Not closed Then AddExceptionRow "Not Closed", 1
+    If charityImbalance Then AddExceptionRow "Charity imbalance", 1
+    If budgetOverrun Then AddExceptionRow "Budget overrun", 1
 End Sub
 
 Private Sub AddExceptionRow(ByVal label As String, ByVal count As Long)
@@ -203,9 +249,7 @@ End Sub
 Private Sub LoadEventList()
     cboEvent.Clear
     cboEvent.AddItem "(All)"
-
-    Dim lo As ListObject
-    Set lo = ThisWorkbook.Worksheets("DATA_Lookups").ListObjects("tblEvents")
+    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Lookups").ListObjects("tblEvents")
     If Not lo.DataBodyRange Is Nothing Then
         Dim c As Range
         For Each c In lo.ListColumns(1).DataBodyRange.Cells
@@ -217,9 +261,7 @@ End Sub
 Private Sub LoadCharityList()
     cboCharity.Clear
     cboCharity.AddItem "(All)"
-
-    Dim lo As ListObject
-    Set lo = ThisWorkbook.Worksheets("DATA_Lookups").ListObjects("tblCharities")
+    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets("DATA_Lookups").ListObjects("tblCharities")
     If Not lo.DataBodyRange Is Nothing Then
         Dim c As Range
         For Each c In lo.ListColumns(1).DataBodyRange.Cells
@@ -229,6 +271,10 @@ Private Sub LoadCharityList()
 End Sub
 
 Private Function NzCombo(ByVal v As Variant, ByVal fallback As String) As String
-    If Len(Trim$(CStr(v))) = 0 Then NzCombo = fallback Else NzCombo = CStr(v)
+    If IsNull(v) Or Len(Trim$(CStr(v))) = 0 Then
+        NzCombo = fallback
+    Else
+        NzCombo = CStr(v)
+    End If
 End Function
 

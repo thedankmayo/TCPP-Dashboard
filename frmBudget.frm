@@ -1,10 +1,10 @@
 VERSION 5.00
 Begin {C62A69F0-16DC-11CE-9E98-00AA00574A4F} frmBudget 
    Caption         =   "UserForm1"
-   ClientHeight    =   7815
+   ClientHeight    =   4520
    ClientLeft      =   120
    ClientTop       =   465
-   ClientWidth     =   5955
+   ClientWidth     =   3780
    OleObjectBlob   =   "frmBudget.frx":0000
    StartUpPosition =   1  'CenterOwner
 End
@@ -22,10 +22,14 @@ Public Sub InitForMonth(ByVal monthKey As String)
 End Sub
 
 Private Sub UserForm_Initialize()
+    On Error GoTo EH
     LoadMonthList
     If Len(mMonthKey) = 0 Then mMonthKey = Format(Date, "yyyy-mm")
     cboMonth.value = mMonthKey
     LoadBudgets
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmBudget.Initialize", Err, ""
 End Sub
 
 Private Sub cmdLoad_Click()
@@ -34,6 +38,7 @@ Private Sub cmdLoad_Click()
 End Sub
 
 Private Sub cmdSave_Click()
+    On Error GoTo EH
     mMonthKey = cboMonth.value
 
     modTCPPv2.SetBudget mMonthKey, "Administrative", CDbl(Val(txtBudgetAdministrative.value))
@@ -46,6 +51,9 @@ Private Sub cmdSave_Click()
 
     modTCPPv2.AuditLog "BudgetSave", "", mMonthKey
     Unload Me
+    Exit Sub
+EH:
+    modTCPPv2.HandleError "frmBudget.Save", Err, mMonthKey
 End Sub
 
 Private Sub cmdClose_Click()
@@ -70,4 +78,3 @@ Private Sub LoadMonthList()
         cboMonth.AddItem Format(DateAdd("m", i, d), "yyyy-mm")
     Next i
 End Sub
-

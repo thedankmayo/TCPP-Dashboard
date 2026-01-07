@@ -2,36 +2,80 @@ Attribute VB_Name = "modTCPPv2"
 Option Explicit
 
 '========================
-' v2: UserForm-driven hub
+' Acceptance Tests
+'========================
+' 1) Create Expense -> record receipt metadata -> reconcile totals -> close month -> generate board packet PDF + archive snapshot.
+' 2) Attempt to close month with missing receipt -> blocked.
+' 3) Attempt to edit closed-month transaction -> blocked.
+' 4) Create meeting -> Word doc created from template and opened -> export PDF -> paths saved -> meeting appears in archive list.
+' 5) Add members -> mark dues paid -> renewal date auto-calculated -> search works.
+' 6) Force an error (e.g., missing folder) -> error logged in tblErrorLog with procedure and context.
+
+'========================
+' v2: Treasurer + Secretary unified tool
 '========================
 
 '--- Sheet names
 Private Const SH_HOME As String = "HOME"
 Private Const SH_LEDGER As String = "DATA_Ledger"
+Private Const SH_RECEIPTS As String = "DATA_Receipts"
 Private Const SH_LOOKUPS As String = "DATA_Lookups"
 Private Const SH_BUDGET As String = "DATA_Budget"
 Private Const SH_MONTHSTATUS As String = "DATA_MonthStatus"
+Private Const SH_MEMBERS As String = "DATA_Members"
+Private Const SH_MEETINGS As String = "DATA_Meetings"
+Private Const SH_ATTENDANCE As String = "DATA_Attendance"
+Private Const SH_MINUTES_LINES As String = "DATA_MinutesAgenda"
+Private Const SH_ACTION_ITEMS As String = "DATA_ActionItems"
+Private Const SH_AGENDA As String = "DATA_Agenda"
+Private Const SH_IMPORTS As String = "DATA_Imports"
 Private Const SH_AUDIT As String = "DATA_Audit"
+Private Const SH_ERRORLOG As String = "DATA_ErrorLog"
 Private Const SH_REPORT As String = "RPT_Monthly"
+Private Const SH_ARCHIVE As String = "ARCH_BoardPackets"
 
 '--- Table names
 Private Const T_LEDGER As String = "tblLedger"
+Private Const T_RECEIPTS As String = "tblReceipts"
+Private Const T_BUDGET As String = "tblBudget"
+Private Const T_MONTHSTATUS As String = "tblMonthStatus"
+Private Const T_MEMBERS As String = "tblMembers"
+Private Const T_MEETINGS As String = "tblMeetings"
+Private Const T_ATTENDANCE As String = "tblAttendance"
+Private Const T_MINUTES_LINES As String = "tblMinutesAgendaLines"
+Private Const T_ACTION_ITEMS As String = "tblActionItems"
+Private Const T_AGENDA As String = "tblAgenda"
+Private Const T_IMPORTLOG As String = "tblImportLog"
+Private Const T_ZEFFY_RAW As String = "tblZeffyRaw"
+Private Const T_BLAZE_RAW As String = "tblBlazeRaw"
+Private Const T_IMPORTMAP_ZEFFY As String = "tblImportMap_Zeffy"
+Private Const T_IMPORTMAP_BLAZE As String = "tblImportMap_Blaze"
+Private Const T_ERRORLOG As String = "tblErrorLog"
+Private Const T_AUDIT As String = "tblAuditLog"
+
+'--- Lookup tables
 Private Const T_COA As String = "tblCOA"
+Private Const T_TXN_TYPES As String = "tblTxnTypes"
+Private Const T_TXN_SUBTYPES As String = "tblTxnSubtypes"
 Private Const T_EVENTS As String = "tblEvents"
 Private Const T_CHARITIES As String = "tblCharities"
 Private Const T_PAYMETHOD As String = "tblPaymentMethods"
+Private Const T_BOARDROSTER As String = "tblBoardRoster"
+Private Const T_MEMBERTYPES As String = "tblMembershipTypes"
 Private Const T_CONFIG As String = "tblConfig"
-Private Const T_BUDGET As String = "tblBudget"
-Private Const T_MONTHSTATUS As String = "tblMonthStatus"
-Private Const T_AUDIT As String = "tblAuditLog"
 
 '--- Config keys
 Private Const CFG_FISCAL_START_MONTH As String = "FiscalYearStartMonth"
 Private Const CFG_APPROVER_NAME As String = "ApproverName"
-Private Const CFG_RECEIPT_THRESHOLD As String = "ReceiptRequiredThreshold"
-Private Const CFG_RECEIPTS_FOLDER As String = "ReceiptsFolderRelative"
-Private Const CFG_BOARDPACKETS_FOLDER As String = "BoardPacketsFolderRelative"
-Private Const CFG_LOCKS_ENABLED As String = "CloseLocksEnabled"
+Private Const CFG_RENEWAL_INTERVAL As String = "RenewalIntervalMonths"
+Private Const CFG_STRICT_BUDGET As String = "StrictBudgetGate"
+Private Const CFG_PATH_BOARDPACKETS As String = "BoardPacketsFolderRelative"
+Private Const CFG_PATH_MINUTES_DOCX As String = "MinutesDocxFolderRelative"
+Private Const CFG_PATH_MINUTES_PDF As String = "MinutesPdfFolderRelative"
+Private Const CFG_PATH_AGENDA_DOCX As String = "AgendaDocxFolderRelative"
+Private Const CFG_PATH_AGENDA_PDF As String = "AgendaPdfFolderRelative"
+Private Const CFG_PATH_IMPORTS_ZEFFY As String = "ImportsZeffyFolderRelative"
+Private Const CFG_PATH_IMPORTS_BLAZE As String = "ImportsBlazeFolderRelative"
 
 '--- Globals for current dashboard filters
 Public gMonthKey As String
@@ -49,37 +93,53 @@ Public Sub InitializeTool(ByVal forceRebuild As Boolean)
     Application.ScreenUpdating = False
     Application.EnableEvents = False
 
+    On Error GoTo EH
+
     EnsureCoreSheets forceRebuild
     EnsureCoreTables forceRebuild
     SeedLookupsIfEmpty
     EnsureConfigDefaults
+    EnsureDefaultFolders
     LockDownWorkbookUI
 
-    ' default filters
     If Len(gMonthKey) = 0 Then gMonthKey = Format(Date, "yyyy-mm")
     If Len(gEventFilter) = 0 Then gEventFilter = "(All)"
     If Len(gCharityFilter) = 0 Then gCharityFilter = "(All)"
 
+CleanExit:
     Application.EnableEvents = prevEV
     Application.ScreenUpdating = prevSU
+    Exit Sub
+EH:
+    LogError "InitializeTool", Err, "forceRebuild=" & CStr(forceRebuild)
+    Resume CleanExit
 End Sub
 
 Public Sub ShowDashboard()
-    On Error Resume Next
+    On Error GoTo EH
     Unload frmDashboard
-    On Error GoTo 0
     frmDashboard.Show vbModal
+    Exit Sub
+EH:
+    HandleError "ShowDashboard", Err, ""
 End Sub
 
 Public Sub CleanupOnClose()
-    On Error Resume Next
+    On Error GoTo EH
     Application.DisplayAlerts = True
+    Exit Sub
+EH:
+    HandleError "CleanupOnClose", Err, ""
 End Sub
 
 Public Sub RunSelfTest()
+    On Error GoTo EH
     Dim msg As String
     msg = SelfTestReport()
     MsgBox msg, vbInformation, "TCPP v2 Self Test"
+    Exit Sub
+EH:
+    HandleError "RunSelfTest", Err, ""
 End Sub
 
 '========================
@@ -89,16 +149,25 @@ End Sub
 Private Sub EnsureCoreSheets(ByVal forceRebuild As Boolean)
     EnsureSheet SH_HOME, xlSheetVisible
     EnsureSheet SH_LEDGER, xlSheetVeryHidden
+    EnsureSheet SH_RECEIPTS, xlSheetVeryHidden
     EnsureSheet SH_LOOKUPS, xlSheetVeryHidden
     EnsureSheet SH_BUDGET, xlSheetVeryHidden
     EnsureSheet SH_MONTHSTATUS, xlSheetVeryHidden
+    EnsureSheet SH_MEMBERS, xlSheetVeryHidden
+    EnsureSheet SH_MEETINGS, xlSheetVeryHidden
+    EnsureSheet SH_ATTENDANCE, xlSheetVeryHidden
+    EnsureSheet SH_MINUTES_LINES, xlSheetVeryHidden
+    EnsureSheet SH_ACTION_ITEMS, xlSheetVeryHidden
+    EnsureSheet SH_AGENDA, xlSheetVeryHidden
+    EnsureSheet SH_IMPORTS, xlSheetVeryHidden
     EnsureSheet SH_AUDIT, xlSheetVeryHidden
+    EnsureSheet SH_ERRORLOG, xlSheetVeryHidden
     EnsureSheet SH_REPORT, xlSheetVeryHidden
+    EnsureSheet SH_ARCHIVE, xlSheetVeryHidden
 
-    ' keep HOME minimal if newly created
     With GetSheet(SH_HOME)
         .Cells.ClearContents
-        .Range("A1").value = "TCPP Treasurer Dashboard (v2)"
+        .Range("A1").value = "TCPP Treasurer + Secretary Dashboard"
         .Range("A2").value = "UserForm hub. Keep this sheet open."
     End With
 End Sub
@@ -106,10 +175,17 @@ End Sub
 Private Sub EnsureCoreTables(ByVal forceRebuild As Boolean)
     EnsureLookupTables forceRebuild
     EnsureLedgerTable forceRebuild
+    EnsureReceiptsTable forceRebuild
     EnsureBudgetTable forceRebuild
     EnsureMonthStatusTable forceRebuild
+    EnsureMembersTable forceRebuild
+    EnsureMeetingsTables forceRebuild
+    EnsureAgendaTable forceRebuild
+    EnsureImportsTables forceRebuild
     EnsureAuditTable forceRebuild
+    EnsureErrorLogTable forceRebuild
     EnsureReportSheetLayout
+    EnsureArchiveTable forceRebuild
 End Sub
 
 Private Sub EnsureLookupTables(ByVal forceRebuild As Boolean)
@@ -117,10 +193,14 @@ Private Sub EnsureLookupTables(ByVal forceRebuild As Boolean)
     Set ws = GetSheet(SH_LOOKUPS)
 
     EnsureTable ws, T_COA, Array("Category"), 1, 1, forceRebuild
-    EnsureTable ws, T_EVENTS, Array("Event"), 1, 3, forceRebuild
-    EnsureTable ws, T_CHARITIES, Array("Charity"), 1, 5, forceRebuild
-    EnsureTable ws, T_PAYMETHOD, Array("PaymentMethod"), 1, 7, forceRebuild
-    EnsureTable ws, T_CONFIG, Array("Key", "Value"), 1, 9, forceRebuild
+    EnsureTable ws, T_TXN_TYPES, Array("TxnType"), 1, 3, forceRebuild
+    EnsureTable ws, T_TXN_SUBTYPES, Array("TxnSubtype"), 1, 5, forceRebuild
+    EnsureTable ws, T_EVENTS, Array("Event"), 1, 7, forceRebuild
+    EnsureTable ws, T_CHARITIES, Array("Charity"), 1, 9, forceRebuild
+    EnsureTable ws, T_PAYMETHOD, Array("PaymentMethod"), 1, 11, forceRebuild
+    EnsureTable ws, T_BOARDROSTER, Array("Name", "Role", "ActiveFlag"), 1, 13, forceRebuild
+    EnsureTable ws, T_MEMBERTYPES, Array("MembershipType"), 1, 16, forceRebuild
+    EnsureTable ws, T_CONFIG, Array("Key", "Value"), 1, 18, forceRebuild
 End Sub
 
 Private Sub EnsureLedgerTable(ByVal forceRebuild As Boolean)
@@ -130,17 +210,28 @@ Private Sub EnsureLedgerTable(ByVal forceRebuild As Boolean)
     Dim headers As Variant
     headers = Array( _
         "TxnID", "Date", "MonthKey", "FiscalYear", _
-        "TxnType", "TxnDetail", _
+        "TxnType", "TxnSubtype", _
         "Category", "Event", "Charity", _
         "Gross", "Fees", "Net", _
-        "PaymentMethod", "PayeeOrSource", "Memo", _
-        "ReceiptRequired", "ReceiptStatus", "ReceiptLink", _
-        "ReceiptWaivedReason", "ReceiptWaivedBy", "ReceiptWaivedAt", _
+        "PaymentMethod", "SourceType", "SourceName", _
+        "MemberName", "MemberEmail", "Memo", _
+        "ReceiptRequired", "ReceiptStatus", "ReceiptInfoID", _
         "ApprovedBy", "ClosedFlag", _
+        "ExternalSource", "ExternalTxnID", "ImportBatchID", _
         "CreatedAt", "UpdatedAt" _
     )
 
     EnsureTable ws, T_LEDGER, headers, 1, 1, forceRebuild
+End Sub
+
+Private Sub EnsureReceiptsTable(ByVal forceRebuild As Boolean)
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_RECEIPTS)
+
+    EnsureTable ws, T_RECEIPTS, Array( _
+        "ReceiptInfoID", "TxnID", "ReceiptNumber", "Vendor", "ReceiptDate", "ReceivedDate", _
+        "StorageLocation", "Notes", "WaivedReason", "WaivedBy", "WaivedAt", "VerifiedFlag" _
+    ), 1, 1, forceRebuild
 End Sub
 
 Private Sub EnsureBudgetTable(ByVal forceRebuild As Boolean)
@@ -162,10 +253,74 @@ Private Sub EnsureMonthStatusTable(ByVal forceRebuild As Boolean)
     ), 1, 1, forceRebuild
 End Sub
 
+Private Sub EnsureMembersTable(ByVal forceRebuild As Boolean)
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_MEMBERS)
+    EnsureTable ws, T_MEMBERS, Array( _
+        "MemberID", "MemberName", "MemberEmail", "MembershipType", "JoinedDate", _
+        "DuesPaidFlag", "DuesPaidDate", "DuesAmount", "RenewalDate", "Notes", _
+        "ExternalSource", "ExternalMemberID", "LastUpdatedAt" _
+    ), 1, 1, forceRebuild
+End Sub
+
+Private Sub EnsureMeetingsTables(ByVal forceRebuild As Boolean)
+    EnsureTable GetSheet(SH_MEETINGS), T_MEETINGS, Array( _
+        "MeetingID", "MeetingDate", "StartTime", "EndTime", "Scribe", "Location", _
+        "MinutesDocPath", "MinutesPdfPath", "CreatedAt" _
+    ), 1, 1, forceRebuild
+
+    EnsureTable GetSheet(SH_ATTENDANCE), T_ATTENDANCE, Array( _
+        "MeetingID", "PersonName", "Role", "PresentFlag" _
+    ), 1, 1, forceRebuild
+
+    EnsureTable GetSheet(SH_MINUTES_LINES), T_MINUTES_LINES, Array( _
+        "MeetingID", "LineTime", "Topic", "Notes", "ActionItem", "Owner" _
+    ), 1, 1, forceRebuild
+
+    EnsureTable GetSheet(SH_ACTION_ITEMS), T_ACTION_ITEMS, Array( _
+        "ActionID", "MeetingID", "ActionItem", "Owner", "DueDate", "Status", "Notes" _
+    ), 1, 1, forceRebuild
+End Sub
+
+Private Sub EnsureAgendaTable(ByVal forceRebuild As Boolean)
+    EnsureTable GetSheet(SH_AGENDA), T_AGENDA, Array( _
+        "AgendaID", "AgendaDate", "DocPath", "PdfPath", "CreatedAt" _
+    ), 1, 1, forceRebuild
+End Sub
+
+Private Sub EnsureImportsTables(ByVal forceRebuild As Boolean)
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_IMPORTS)
+
+    EnsureTable ws, T_IMPORTLOG, Array( _
+        "ImportBatchID", "Source", "ImportedAt", "FileName", "FileHash", "RowCount", "Notes", "Status" _
+    ), 1, 1, forceRebuild
+    EnsureTable ws, T_ZEFFY_RAW, Array("ImportBatchID", "RowHash", "RawData"), 1, 9, forceRebuild
+    EnsureTable ws, T_BLAZE_RAW, Array("ImportBatchID", "RowHash", "RawData"), 1, 13, forceRebuild
+    EnsureTable ws, T_IMPORTMAP_ZEFFY, Array("SourceColumn", "TargetColumn", "Notes"), 1, 17, forceRebuild
+    EnsureTable ws, T_IMPORTMAP_BLAZE, Array("SourceColumn", "TargetColumn", "Notes"), 1, 21, forceRebuild
+End Sub
+
 Private Sub EnsureAuditTable(ByVal forceRebuild As Boolean)
     Dim ws As Worksheet
     Set ws = GetSheet(SH_AUDIT)
     EnsureTable ws, T_AUDIT, Array("Timestamp", "User", "Action", "TxnID", "Details"), 1, 1, forceRebuild
+End Sub
+
+Private Sub EnsureErrorLogTable(ByVal forceRebuild As Boolean)
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_ERRORLOG)
+    EnsureTable ws, T_ERRORLOG, Array( _
+        "ErrorID", "Timestamp", "User", "Procedure", "ErrNumber", "ErrDescription", "Context", "Stack" _
+    ), 1, 1, forceRebuild
+End Sub
+
+Private Sub EnsureArchiveTable(ByVal forceRebuild As Boolean)
+    Dim ws As Worksheet
+    Set ws = GetSheet(SH_ARCHIVE)
+    EnsureTable ws, "ARCH_BoardPackets", Array( _
+        "MonthKey", "FiscalYear", "GeneratedAt", "SnapshotRange" _
+    ), 1, 1, forceRebuild
 End Sub
 
 Private Sub EnsureReportSheetLayout()
@@ -203,6 +358,8 @@ Private Sub EnsureReportSheetLayout()
     ws.Range("G14").value = "Raised (Net)"
     ws.Range("G15").value = "Paid Out (Net)"
     ws.Range("G16").value = "Held (YTD Net)"
+    ws.Range("G17").value = "Raised (YTD)"
+    ws.Range("G18").value = "Paid Out (YTD)"
 
     ws.Range("A24").value = "Event Rollup (Month)"
     ws.Range("A25").value = "Event"
@@ -223,14 +380,29 @@ Private Sub EnsureConfigDefaults()
 
     UpsertConfig cfg, CFG_FISCAL_START_MONTH, "6"
     UpsertConfig cfg, CFG_APPROVER_NAME, Application.UserName
-    UpsertConfig cfg, CFG_RECEIPT_THRESHOLD, "0"
-    UpsertConfig cfg, CFG_RECEIPTS_FOLDER, ".\Receipts\"
-    UpsertConfig cfg, CFG_BOARDPACKETS_FOLDER, ".\BoardPackets\"
-    UpsertConfig cfg, CFG_LOCKS_ENABLED, "TRUE"
+    UpsertConfig cfg, CFG_RENEWAL_INTERVAL, "12"
+    UpsertConfig cfg, CFG_STRICT_BUDGET, "FALSE"
+
+    UpsertConfig cfg, CFG_PATH_BOARDPACKETS, ".\BoardPackets\"
+    UpsertConfig cfg, CFG_PATH_MINUTES_DOCX, ".\Minutes\DOCX\"
+    UpsertConfig cfg, CFG_PATH_MINUTES_PDF, ".\Minutes\PDF\"
+    UpsertConfig cfg, CFG_PATH_AGENDA_DOCX, ".\Agenda\DOCX\"
+    UpsertConfig cfg, CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\"
+    UpsertConfig cfg, CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\"
+    UpsertConfig cfg, CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\"
+End Sub
+
+Private Sub EnsureDefaultFolders()
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_BOARDPACKETS, ".\BoardPackets\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_MINUTES_DOCX, ".\Minutes\DOCX\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_MINUTES_PDF, ".\Minutes\PDF\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_DOCX, ".\Agenda\DOCX\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\"))
+    EnsureFolderPath ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\"))
 End Sub
 
 Private Sub SeedLookupsIfEmpty()
-    ' COA categories
     Dim coa As ListObject: Set coa = GetTable(SH_LOOKUPS, T_COA)
     If coa.DataBodyRange Is Nothing Then
         AppendListValue coa, 1, "Administrative"
@@ -240,6 +412,29 @@ Private Sub SeedLookupsIfEmpty()
         AppendListValue coa, 1, "Travel"
         AppendListValue coa, 1, "Services"
         AppendListValue coa, 1, "Misc"
+    End If
+
+    Dim types As ListObject: Set types = GetTable(SH_LOOKUPS, T_TXN_TYPES)
+    If types.DataBodyRange Is Nothing Then
+        AppendListValue types, 1, "Income"
+        AppendListValue types, 1, "Expense"
+        AppendListValue types, 1, "Reimbursement"
+        AppendListValue types, 1, "Transfer"
+        AppendListValue types, 1, "Deposit"
+        AppendListValue types, 1, "Withdrawal"
+        AppendListValue types, 1, "Adjustment"
+    End If
+
+    Dim subtypes As ListObject: Set subtypes = GetTable(SH_LOOKUPS, T_TXN_SUBTYPES)
+    If subtypes.DataBodyRange Is Nothing Then
+        AppendListValue subtypes, 1, "Dues"
+        AppendListValue subtypes, 1, "Donation"
+        AppendListValue subtypes, 1, "Event"
+        AppendListValue subtypes, 1, "Operations"
+        AppendListValue subtypes, 1, "Labor"
+        AppendListValue subtypes, 1, "Insurance"
+        AppendListValue subtypes, 1, "Rent"
+        AppendListValue subtypes, 1, "Grant"
     End If
 
     Dim ev As ListObject: Set ev = GetTable(SH_LOOKUPS, T_EVENTS)
@@ -266,6 +461,13 @@ Private Sub SeedLookupsIfEmpty()
         AppendListValue pm, 1, "Bank"
         AppendListValue pm, 1, "Other"
     End If
+
+    Dim mt As ListObject: Set mt = GetTable(SH_LOOKUPS, T_MEMBERTYPES)
+    If mt.DataBodyRange Is Nothing Then
+        AppendListValue mt, 1, "Full"
+        AppendListValue mt, 1, "AtLarge"
+        AppendListValue mt, 1, "Other"
+    End If
 End Sub
 
 Private Sub LockDownWorkbookUI()
@@ -275,6 +477,58 @@ Private Sub LockDownWorkbookUI()
     ThisWorkbook.Worksheets(SH_HOME).Activate
     ActiveWindow.DisplayWorkbookTabs = False
     Application.DisplayAlerts = True
+End Sub
+
+'========================
+' Error handling
+'========================
+
+Public Sub HandleError(ByVal procName As String, ByVal errObj As ErrObject, ByVal context As String)
+    LogError procName, errObj, context
+    MsgBox "Something went wrong. Details were logged." & vbCrLf & errObj.Description, vbExclamation, "TCPP"
+End Sub
+
+Public Sub LogError(ByVal procName As String, ByVal errObj As ErrObject, ByVal context As String)
+    On Error Resume Next
+    Dim lo As ListObject: Set lo = GetTable(SH_ERRORLOG, T_ERRORLOG)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    lr.Range.Cells(1, 1).value = "ERR-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+    lr.Range.Cells(1, 2).value = Now
+    lr.Range.Cells(1, 3).value = Application.UserName
+    lr.Range.Cells(1, 4).value = procName
+    lr.Range.Cells(1, 5).value = errObj.Number
+    lr.Range.Cells(1, 6).value = errObj.Description
+    lr.Range.Cells(1, 7).value = context
+    lr.Range.Cells(1, 8).value = ""
+End Sub
+
+'========================
+' UI theming helpers
+'========================
+
+Public Sub ApplyTheme(ByVal frm As Object)
+    On Error Resume Next
+    frm.BackColor = RGB(245, 246, 250)
+    frm.Font.name = "Segoe UI"
+    frm.Font.Size = 9
+
+    Dim ctl As Object
+    For Each ctl In frm.Controls
+        ctl.Font.name = "Segoe UI"
+        ctl.Font.Size = 9
+        Select Case TypeName(ctl)
+            Case "CommandButton"
+                ctl.BackColor = RGB(32, 85, 154)
+                ctl.ForeColor = RGB(255, 255, 255)
+            Case "Label"
+                ctl.BackStyle = 0
+                ctl.ForeColor = RGB(50, 50, 50)
+            Case "TextBox", "ComboBox", "ListBox"
+                ctl.BackColor = RGB(255, 255, 255)
+                ctl.ForeColor = RGB(30, 30, 30)
+        End Select
+    Next ctl
 End Sub
 
 '========================
@@ -315,7 +569,6 @@ Private Sub EnsureTable(ByVal ws As Worksheet, ByVal tableName As String, ByVal 
             lo.Unlist
             Set lo = Nothing
         Else
-            ' ensure headers match (add any missing headers at end)
             EnsureHeaders lo, headers
             Exit Sub
         End If
@@ -333,7 +586,6 @@ Private Sub EnsureTable(ByVal ws As Worksheet, ByVal tableName As String, ByVal 
     Set lo = ws.ListObjects.Add(xlSrcRange, rng, , xlYes)
     lo.name = tableName
 
-    ' remove the placeholder blank row
     If Not lo.DataBodyRange Is Nothing Then
         If lo.ListRows.count = 1 Then lo.ListRows(1).Delete
     End If
@@ -383,7 +635,8 @@ Private Sub AppendConfig(ByVal lo As ListObject, ByVal key As String, ByVal valu
     lr.Range.Cells(1, 2).value = value
 End Sub
 
-Private Function GetConfigValue(ByVal key As String, Optional ByVal defaultValue As String = "") As String
+Public Function GetConfigValue(ByVal key As String, Optional ByVal defaultValue As String = "") As String
+    On Error GoTo EH
     Dim cfg As ListObject: Set cfg = GetTable(SH_LOOKUPS, T_CONFIG)
     If cfg.DataBodyRange Is Nothing Then
         GetConfigValue = defaultValue
@@ -398,6 +651,10 @@ Private Function GetConfigValue(ByVal key As String, Optional ByVal defaultValue
         End If
     Next r
     GetConfigValue = defaultValue
+    Exit Function
+EH:
+    HandleError "GetConfigValue", Err, key
+    GetConfigValue = defaultValue
 End Function
 
 '========================
@@ -405,9 +662,10 @@ End Function
 '========================
 
 Public Function FiscalYearForMonthKey(ByVal monthKey As String) As Long
+    On Error GoTo EH
     Dim y As Long, m As Long
-    y = CLng(Left$(monthKey, 4))
-    m = CLng(Right$(monthKey, 2))
+    y = CLng(left$(monthKey, 4))
+    m = CLng(right$(monthKey, 2))
 
     Dim startM As Long
     startM = CLng(GetConfigValue(CFG_FISCAL_START_MONTH, "6"))
@@ -417,18 +675,19 @@ Public Function FiscalYearForMonthKey(ByVal monthKey As String) As Long
     Else
         FiscalYearForMonthKey = y
     End If
+    Exit Function
+EH:
+    HandleError "FiscalYearForMonthKey", Err, monthKey
+    FiscalYearForMonthKey = 0
 End Function
 
 Public Function MonthKeyFromDate(ByVal d As Date) As String
+    On Error GoTo EH
     MonthKeyFromDate = Format(d, "yyyy-mm")
-End Function
-
-Private Function ParseDateFlexible(ByVal s As String) As Date
-    If IsDate(s) Then
-        ParseDateFlexible = CDate(s)
-    Else
-        ParseDateFlexible = Date
-    End If
+    Exit Function
+EH:
+    HandleError "MonthKeyFromDate", Err, ""
+    MonthKeyFromDate = ""
 End Function
 
 Private Function NzStr(ByVal v As Variant, Optional ByVal fallback As String = "") As String
@@ -456,6 +715,7 @@ End Function
 '========================
 
 Public Sub AuditLog(ByVal action As String, Optional ByVal txnId As String = "", Optional ByVal details As String = "")
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_AUDIT, T_AUDIT)
     Dim lr As ListRow: Set lr = lo.ListRows.Add
     lr.Range.Cells(1, 1).value = Now
@@ -463,6 +723,9 @@ Public Sub AuditLog(ByVal action As String, Optional ByVal txnId As String = "",
     lr.Range.Cells(1, 3).value = action
     lr.Range.Cells(1, 4).value = txnId
     lr.Range.Cells(1, 5).value = details
+    Exit Sub
+EH:
+    HandleError "AuditLog", Err, action
 End Sub
 
 '========================
@@ -470,6 +733,7 @@ End Sub
 '========================
 
 Public Function NextTxnId(ByVal monthKey As String) As String
+    On Error GoTo EH
     Dim fy As Long: fy = FiscalYearForMonthKey(monthKey)
 
     Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
@@ -492,17 +756,24 @@ Public Function NextTxnId(ByVal monthKey As String) As String
     End If
 
     NextTxnId = "TCPP-" & CStr(fy) & "-" & Replace(monthKey, "-", "") & "-" & Format$(maxN + 1, "0000")
+    Exit Function
+EH:
+    HandleError "NextTxnId", Err, monthKey
+    NextTxnId = ""
 End Function
 
 Public Function AddLedgerEntry( _
-    ByVal txnDate As Date, ByVal txnType As String, ByVal txnDetail As String, _
+    ByVal txnDate As Date, ByVal txnType As String, ByVal txnSubtype As String, _
     ByVal category As String, ByVal eventName As String, ByVal charityName As String, _
     ByVal gross As Double, ByVal fees As Double, ByVal paymentMethod As String, _
-    ByVal payeeOrSource As String, ByVal memo As String, _
-    ByVal receiptRequired As Boolean, _
-    Optional ByVal allowInClosedMonth As Boolean = False _
+    ByVal sourceType As String, ByVal sourceName As String, _
+    ByVal memberName As String, ByVal memberEmail As String, _
+    ByVal memo As String, ByVal receiptRequired As Boolean, _
+    Optional ByVal externalSource As String = "Manual", Optional ByVal externalTxnId As String = "", _
+    Optional ByVal importBatchId As String = "", Optional ByVal allowInClosedMonth As Boolean = False _
 ) As String
 
+    On Error GoTo EH
     Dim monthKey As String: monthKey = MonthKeyFromDate(txnDate)
 
     If (IsMonthClosed(monthKey) And Not allowInClosedMonth) Then
@@ -521,7 +792,7 @@ Public Function AddLedgerEntry( _
     lr.Range.Cells(1, lo.ListColumns("FiscalYear").Index).value = fy
 
     lr.Range.Cells(1, lo.ListColumns("TxnType").Index).value = txnType
-    lr.Range.Cells(1, lo.ListColumns("TxnDetail").Index).value = txnDetail
+    lr.Range.Cells(1, lo.ListColumns("TxnSubtype").Index).value = txnSubtype
 
     lr.Range.Cells(1, lo.ListColumns("Category").Index).value = category
     lr.Range.Cells(1, lo.ListColumns("Event").Index).value = eventName
@@ -532,15 +803,27 @@ Public Function AddLedgerEntry( _
     lr.Range.Cells(1, lo.ListColumns("Net").Index).value = gross - fees
 
     lr.Range.Cells(1, lo.ListColumns("PaymentMethod").Index).value = paymentMethod
-    lr.Range.Cells(1, lo.ListColumns("PayeeOrSource").Index).value = payeeOrSource
+    lr.Range.Cells(1, lo.ListColumns("SourceType").Index).value = sourceType
+    lr.Range.Cells(1, lo.ListColumns("SourceName").Index).value = sourceName
+
+    lr.Range.Cells(1, lo.ListColumns("MemberName").Index).value = memberName
+    lr.Range.Cells(1, lo.ListColumns("MemberEmail").Index).value = memberEmail
     lr.Range.Cells(1, lo.ListColumns("Memo").Index).value = memo
+
+    If (LCase$(txnType) = "expense" Or LCase$(txnType) = "reimbursement") And receiptRequired = False Then
+        receiptRequired = True
+    End If
 
     lr.Range.Cells(1, lo.ListColumns("ReceiptRequired").Index).value = receiptRequired
     lr.Range.Cells(1, lo.ListColumns("ReceiptStatus").Index).value = IIf(receiptRequired, "Missing", "NotRequired")
-    lr.Range.Cells(1, lo.ListColumns("ReceiptLink").Index).value = ""
+    lr.Range.Cells(1, lo.ListColumns("ReceiptInfoID").Index).value = ""
 
     lr.Range.Cells(1, lo.ListColumns("ApprovedBy").Index).value = GetConfigValue(CFG_APPROVER_NAME, Application.UserName)
     lr.Range.Cells(1, lo.ListColumns("ClosedFlag").Index).value = False
+
+    lr.Range.Cells(1, lo.ListColumns("ExternalSource").Index).value = externalSource
+    lr.Range.Cells(1, lo.ListColumns("ExternalTxnID").Index).value = externalTxnId
+    lr.Range.Cells(1, lo.ListColumns("ImportBatchID").Index).value = importBatchId
 
     lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
     lr.Range.Cells(1, lo.ListColumns("UpdatedAt").Index).value = Now
@@ -548,10 +831,15 @@ Public Function AddLedgerEntry( _
     AuditLog "Create", txnId, txnType & " / " & monthKey & " / " & Format$(gross - fees, "0.00")
 
     AddLedgerEntry = txnId
+    Exit Function
+EH:
+    HandleError "AddLedgerEntry", Err, MonthKeyFromDate(txnDate)
+    AddLedgerEntry = ""
 End Function
 
 Public Sub UpdateLedgerFields(ByVal txnId As String, ByVal category As String, ByVal eventName As String, ByVal charityName As String, _
                              ByVal receiptRequired As Boolean)
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
     Dim rowIdx As Long: rowIdx = FindLedgerRowIndex(txnId)
     If rowIdx = 0 Then Err.Raise vbObjectError + 514, "UpdateLedgerFields", "TxnID not found: " & txnId
@@ -570,16 +858,16 @@ Public Sub UpdateLedgerFields(ByVal txnId As String, ByVal category As String, B
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReceiptRequired").Index).value = receiptRequired
 
     Dim statusCol As Long: statusCol = lo.ListColumns("ReceiptStatus").Index
-    Dim linkCol As Long: linkCol = lo.ListColumns("ReceiptLink").Index
+    Dim infoCol As Long: infoCol = lo.ListColumns("ReceiptInfoID").Index
 
-    Dim curLink As String: curLink = NzStr(lo.DataBodyRange.Cells(rowIdx, linkCol).value, "")
+    Dim curInfo As String: curInfo = NzStr(lo.DataBodyRange.Cells(rowIdx, infoCol).value, "")
     Dim curStatus As String: curStatus = NzStr(lo.DataBodyRange.Cells(rowIdx, statusCol).value, "")
 
     If receiptRequired Then
-        If Len(curLink) = 0 Then
+        If Len(curInfo) = 0 Then
             If curStatus <> "Waived" Then lo.DataBodyRange.Cells(rowIdx, statusCol).value = "Missing"
         Else
-            lo.DataBodyRange.Cells(rowIdx, statusCol).value = "Linked"
+            lo.DataBodyRange.Cells(rowIdx, statusCol).value = "Recorded"
         End If
     Else
         lo.DataBodyRange.Cells(rowIdx, statusCol).value = "NotRequired"
@@ -587,6 +875,9 @@ Public Sub UpdateLedgerFields(ByVal txnId As String, ByVal category As String, B
 
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("UpdatedAt").Index).value = Now
     AuditLog "Edit", txnId, "Category/Event/Charity/ReceiptRequired"
+    Exit Sub
+EH:
+    HandleError "UpdateLedgerFields", Err, txnId
 End Sub
 
 Private Function FindLedgerRowIndex(ByVal txnId As String) As Long
@@ -607,127 +898,88 @@ End Function
 ' Receipts
 '========================
 
-Public Sub AttachReceiptToTxn(ByVal txnId As String)
-    Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
+Public Function CreateReceiptInfo(ByVal txnId As String, ByVal vendor As String, ByVal receiptDate As Variant, _
+                                  ByVal receivedDate As Date, ByVal storageLocation As String, ByVal notes As String) As String
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_RECEIPTS, T_RECEIPTS)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    Dim receiptId As String
+    receiptId = "RCPT-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    lr.Range.Cells(1, lo.ListColumns("ReceiptInfoID").Index).value = receiptId
+    lr.Range.Cells(1, lo.ListColumns("TxnID").Index).value = txnId
+    lr.Range.Cells(1, lo.ListColumns("ReceiptNumber").Index).value = ""
+    lr.Range.Cells(1, lo.ListColumns("Vendor").Index).value = vendor
+    If IsDate(receiptDate) Then lr.Range.Cells(1, lo.ListColumns("ReceiptDate").Index).value = CDate(receiptDate)
+    lr.Range.Cells(1, lo.ListColumns("ReceivedDate").Index).value = receivedDate
+    lr.Range.Cells(1, lo.ListColumns("StorageLocation").Index).value = storageLocation
+    lr.Range.Cells(1, lo.ListColumns("Notes").Index).value = notes
+    lr.Range.Cells(1, lo.ListColumns("VerifiedFlag").Index).value = True
+
+    Dim lLedger As ListObject: Set lLedger = GetTable(SH_LEDGER, T_LEDGER)
     Dim rowIdx As Long: rowIdx = FindLedgerRowIndex(txnId)
-    If rowIdx = 0 Then Err.Raise vbObjectError + 516, "AttachReceiptToTxn", "TxnID not found: " & txnId
+    If rowIdx > 0 Then
+        lLedger.DataBodyRange.Cells(rowIdx, lLedger.ListColumns("ReceiptInfoID").Index).value = receiptId
+        lLedger.DataBodyRange.Cells(rowIdx, lLedger.ListColumns("ReceiptStatus").Index).value = "Recorded"
+        lLedger.DataBodyRange.Cells(rowIdx, lLedger.ListColumns("UpdatedAt").Index).value = Now
+    End If
 
-    Dim monthKey As String: monthKey = CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MonthKey").Index).value)
-    If IsMonthClosed(monthKey) Then Err.Raise vbObjectError + 517, "AttachReceiptToTxn", "Month is closed: " & monthKey
-
-    Dim fd As FileDialog
-    Set fd = Application.FileDialog(msoFileDialogFilePicker)
-    fd.AllowMultiSelect = False
-    fd.Title = "Select receipt file"
-    fd.Filters.Clear
-    fd.Filters.Add "Images/PDF", "*.pdf;*.jpg;*.jpeg;*.png;*.heic", 1
-
-    If fd.Show <> -1 Then Exit Sub ' canceled
-
-    Dim src As String: src = fd.SelectedItems(1)
-    Dim destFolder As String: destFolder = ReceiptFolderForMonth(monthKey)
-    EnsureFolderPath destFolder
-
-    Dim d As Date: d = CDate(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Date").Index).value)
-    Dim payee As String: payee = SanitizeFilePart(NzStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("PayeeOrSource").Index).value, "Receipt"))
-    Dim ext As String: ext = LCase$(Mid$(src, InStrRev(src, ".")))
-
-    Dim destName As String
-    destName = txnId & "__" & Format$(d, "yyyy-mm-dd") & "__" & payee & ext
-
-    Dim dest As String: dest = destFolder & destName
-    FileCopy src, dest
-
-    Dim linkCol As Long: linkCol = lo.ListColumns("ReceiptLink").Index
-    lo.DataBodyRange.Cells(rowIdx, linkCol).value = dest
-
-    ' set hyperlink with display text
-    Dim cell As Range: Set cell = lo.DataBodyRange.Cells(rowIdx, linkCol)
-    On Error Resume Next
-    cell.Hyperlinks.Delete
-    On Error GoTo 0
-    ThisWorkbook.Worksheets(SH_LEDGER).Hyperlinks.Add Anchor:=cell, Address:=dest, TextToDisplay:="Receipt"
-
-    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReceiptStatus").Index).value = "Linked"
-    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("UpdatedAt").Index).value = Now
-
-    AuditLog "AttachReceipt", txnId, dest
-End Sub
+    AuditLog "ReceiptRecorded", txnId, receiptId
+    CreateReceiptInfo = receiptId
+    Exit Function
+EH:
+    HandleError "CreateReceiptInfo", Err, txnId
+    CreateReceiptInfo = ""
+End Function
 
 Public Sub WaiveReceipt(ByVal txnId As String, ByVal reason As String)
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
     Dim rowIdx As Long: rowIdx = FindLedgerRowIndex(txnId)
     If rowIdx = 0 Then Err.Raise vbObjectError + 518, "WaiveReceipt", "TxnID not found: " & txnId
 
+    If Len(Trim$(reason)) = 0 Then
+        Err.Raise vbObjectError + 518, "WaiveReceipt", "Waive reason is required."
+    End If
+
     Dim monthKey As String: monthKey = CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MonthKey").Index).value)
     If IsMonthClosed(monthKey) Then Err.Raise vbObjectError + 519, "WaiveReceipt", "Month is closed: " & monthKey
 
+    Dim receiptId As String
+    receiptId = CreateReceiptInfo(txnId, "", Empty, Date, "", "")
+
+    Dim rLo As ListObject: Set rLo = GetTable(SH_RECEIPTS, T_RECEIPTS)
+    Dim rIdx As Long: rIdx = FindReceiptRowIndex(receiptId)
+
+    If rIdx > 0 Then
+        rLo.DataBodyRange.Cells(rIdx, rLo.ListColumns("WaivedReason").Index).value = reason
+        rLo.DataBodyRange.Cells(rIdx, rLo.ListColumns("WaivedBy").Index).value = GetConfigValue(CFG_APPROVER_NAME, Application.UserName)
+        rLo.DataBodyRange.Cells(rIdx, rLo.ListColumns("WaivedAt").Index).value = Now
+        rLo.DataBodyRange.Cells(rIdx, rLo.ListColumns("VerifiedFlag").Index).value = False
+    End If
+
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReceiptStatus").Index).value = "Waived"
-    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReceiptWaivedReason").Index).value = reason
-    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReceiptWaivedBy").Index).value = GetConfigValue(CFG_APPROVER_NAME, Application.UserName)
-    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReceiptWaivedAt").Index).value = Now
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("UpdatedAt").Index).value = Now
 
     AuditLog "WaiveReceipt", txnId, reason
+    Exit Sub
+EH:
+    HandleError "WaiveReceipt", Err, txnId
 End Sub
 
-Private Function ReceiptFolderForMonth(ByVal monthKey As String) As String
-    Dim baseRel As String: baseRel = GetConfigValue(CFG_RECEIPTS_FOLDER, ".\Receipts\")
-    Dim baseAbs As String: baseAbs = ResolveWorkbookRelativePath(baseRel)
-    Dim fy As Long: fy = FiscalYearForMonthKey(monthKey)
+Private Function FindReceiptRowIndex(ByVal receiptId As String) As Long
+    Dim lo As ListObject: Set lo = GetTable(SH_RECEIPTS, T_RECEIPTS)
+    FindReceiptRowIndex = 0
+    If lo.DataBodyRange Is Nothing Then Exit Function
 
-    ReceiptFolderForMonth = EnsureTrailingSlash(baseAbs) & "FY" & CStr(fy) & "\" & monthKey & "\"
-End Function
-
-Private Function BoardPacketsFolderAbs() As String
-    BoardPacketsFolderAbs = ResolveWorkbookRelativePath(GetConfigValue(CFG_BOARDPACKETS_FOLDER, ".\BoardPackets\"))
-    BoardPacketsFolderAbs = EnsureTrailingSlash(BoardPacketsFolderAbs)
-End Function
-
-Private Function ResolveWorkbookRelativePath(ByVal rel As String) As String
-    Dim p As String: p = ThisWorkbook.path
-    If Len(p) = 0 Then p = CurDir$
-    ResolveWorkbookRelativePath = EnsureTrailingSlash(p) & Replace(rel, ".\", "")
-End Function
-
-Private Function EnsureTrailingSlash(ByVal p As String) As String
-    If Right$(p, 1) = "\" Then
-        EnsureTrailingSlash = p
-    Else
-        EnsureTrailingSlash = p & "\"
-    End If
-End Function
-
-Private Sub EnsureFolderPath(ByVal folderPath As String)
-    Dim parts() As String: parts = Split(folderPath, "\")
-    Dim i As Long, cur As String
-
-    If InStr(folderPath, ":\") > 0 Then
-        cur = parts(0) & "\"
-        i = 1
-    Else
-        cur = ""
-        i = 0
-    End If
-
-    For i = i To UBound(parts)
-        If Len(parts(i)) > 0 Then
-            cur = cur & parts(i) & "\"
-            If Dir(cur, vbDirectory) = "" Then MkDir cur
+    Dim r As Range
+    For Each r In lo.ListColumns("ReceiptInfoID").DataBodyRange.Cells
+        If CStr(r.value) = receiptId Then
+            FindReceiptRowIndex = r.Row - lo.DataBodyRange.Row + 1
+            Exit Function
         End If
-    Next i
-End Sub
-
-Private Function SanitizeFilePart(ByVal s As String) As String
-    Dim bad As Variant: bad = Array("\", "/", ":", "*", "?", """", "<", ">", "|")
-    Dim i As Long
-    For i = LBound(bad) To UBound(bad)
-        s = Replace(s, bad(i), "_")
-    Next i
-    s = Trim$(s)
-    If Len(s) = 0 Then s = "Receipt"
-    If Len(s) > 60 Then s = Left$(s, 60)
-    SanitizeFilePart = s
+    Next r
 End Function
 
 '========================
@@ -735,6 +987,7 @@ End Function
 '========================
 
 Public Function IsMonthClosed(ByVal monthKey As String) As Boolean
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_MONTHSTATUS, T_MONTHSTATUS)
     Dim rowIdx As Long: rowIdx = FindMonthStatusRow(monthKey)
     If rowIdx = 0 Then
@@ -742,6 +995,10 @@ Public Function IsMonthClosed(ByVal monthKey As String) As Boolean
     Else
         IsMonthClosed = CBool(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ClosedFlag").Index).value)
     End If
+    Exit Function
+EH:
+    HandleError "IsMonthClosed", Err, monthKey
+    IsMonthClosed = False
 End Function
 
 Private Function FindMonthStatusRow(ByVal monthKey As String) As Long
@@ -779,6 +1036,7 @@ Private Sub EnsureMonthStatusRow(ByVal monthKey As String)
 End Sub
 
 Public Sub ComputeMonthLedgerTotals(ByVal monthKey As String, ByRef deposits As Double, ByRef withdrawals As Double)
+    On Error GoTo EH
     deposits = 0#
     withdrawals = 0#
 
@@ -795,18 +1053,22 @@ Public Sub ComputeMonthLedgerTotals(ByVal monthKey As String, ByRef deposits As 
             Dim t As String: t = CStr(lo.DataBodyRange.Cells(i, typeCol).value)
             Dim n As Double: n = CDbl(lo.DataBodyRange.Cells(i, netCol).value)
 
-            If LCase$(t) = "income" Then
+            If LCase$(t) = "income" Or LCase$(t) = "deposit" Then
                 deposits = deposits + n
-            ElseIf LCase$(t) = "expense" Or LCase$(t) = "reimbursement" Then
+            ElseIf LCase$(t) = "expense" Or LCase$(t) = "reimbursement" Or LCase$(t) = "withdrawal" Then
                 withdrawals = withdrawals + Abs(n)
             ElseIf LCase$(t) = "adjustment" Then
                 If n >= 0 Then deposits = deposits + n Else withdrawals = withdrawals + Abs(n)
             End If
         End If
     Next i
+    Exit Sub
+EH:
+    HandleError "ComputeMonthLedgerTotals", Err, monthKey
 End Sub
 
 Public Sub SaveReconciliation(ByVal monthKey As String, ByVal beginningBal As Double, ByVal endingBal As Double)
+    On Error GoTo EH
     EnsureMonthStatusRow monthKey
 
     Dim deposits As Double, withdrawals As Double
@@ -828,13 +1090,21 @@ Public Sub SaveReconciliation(ByVal monthKey As String, ByVal beginningBal As Do
     lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("LastReconAt").Index).value = Now
 
     AuditLog "Reconcile", "", monthKey & " diff=" & Format$(diff, "0.00")
+    Exit Sub
+EH:
+    HandleError "SaveReconciliation", Err, monthKey
 End Sub
 
-Public Function GateCheckMonth(ByVal monthKey As String, ByRef missingCategories As Long, ByRef missingReceipts As Long, ByRef missingReceiptsAmt As Double, ByRef reconOk As Boolean) As String
+Public Function GateCheckMonth(ByVal monthKey As String, ByRef missingCategories As Long, ByRef missingReceipts As Long, _
+                               ByRef missingReceiptsAmt As Double, ByRef reconOk As Boolean, _
+                               ByRef charityImbalance As Boolean, ByRef budgetOverrun As Boolean) As String
+    On Error GoTo EH
     missingCategories = 0
     missingReceipts = 0
     missingReceiptsAmt = 0#
     reconOk = False
+    charityImbalance = False
+    budgetOverrun = False
 
     Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
     Dim mkCol As Long: mkCol = lo.ListColumns("MonthKey").Index
@@ -855,7 +1125,7 @@ Public Function GateCheckMonth(ByVal monthKey As String, ByRef missingCategories
                 Dim rs As String: rs = CStr(lo.DataBodyRange.Cells(i, rsCol).value)
 
                 If rr Then
-                    If rs <> "Linked" And rs <> "Waived" Then
+                    If rs <> "Recorded" And rs <> "Waived" Then
                         missingReceipts = missingReceipts + 1
                         missingReceiptsAmt = missingReceiptsAmt + Abs(CDbl(lo.DataBodyRange.Cells(i, netCol).value))
                     End If
@@ -865,16 +1135,25 @@ Public Function GateCheckMonth(ByVal monthKey As String, ByRef missingCategories
     End If
 
     reconOk = IsReconOk(monthKey)
+    charityImbalance = (CharityHeldYTD(monthKey) < 0#) Or CharityPaidExceedsRaisedYTD(monthKey)
+    budgetOverrun = HasBudgetOverrun(monthKey)
 
     Dim msg As String
     msg = "Month " & monthKey & " gates:" & vbCrLf & _
           "Uncategorized: " & CStr(missingCategories) & vbCrLf & _
           "Missing receipts: " & CStr(missingReceipts) & " ($" & Format$(missingReceiptsAmt, "0.00") & ")" & vbCrLf & _
-          "Reconciled: " & IIf(reconOk, "YES", "NO")
+          "Reconciled: " & IIf(reconOk, "YES", "NO") & vbCrLf & _
+          "Charity imbalance: " & IIf(charityImbalance, "YES", "NO") & vbCrLf & _
+          "Budget overrun: " & IIf(budgetOverrun, "YES", "NO")
     GateCheckMonth = msg
+    Exit Function
+EH:
+    HandleError "GateCheckMonth", Err, monthKey
+    GateCheckMonth = "Gate check failed."
 End Function
 
 Public Function IsReconOk(ByVal monthKey As String) As Boolean
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_MONTHSTATUS, T_MONTHSTATUS)
     Dim rowIdx As Long: rowIdx = FindMonthStatusRow(monthKey)
     If rowIdx = 0 Then
@@ -884,15 +1163,28 @@ Public Function IsReconOk(ByVal monthKey As String) As Boolean
 
     Dim status As String: status = CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ReconStatus").Index).value)
     IsReconOk = (status = "OK")
+    Exit Function
+EH:
+    HandleError "IsReconOk", Err, monthKey
+    IsReconOk = False
 End Function
 
 Public Sub CloseMonth(ByVal monthKey As String)
-    Dim mc As Long, mr As Long
-    Dim mAmt As Double, reconOk As Boolean
-    Dim gateMsg As String
-    gateMsg = GateCheckMonth(monthKey, mc, mr, mAmt, reconOk)
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
 
-    If mc <> 0 Or mr <> 0 Or (Not reconOk) Then
+    On Error GoTo EH
+    Dim mc As Long, mr As Long
+    Dim mAmt As Double, reconOk As Boolean, charityImbalance As Boolean, budgetOverrun As Boolean
+    Dim gateMsg As String
+    gateMsg = GateCheckMonth(monthKey, mc, mr, mAmt, reconOk, charityImbalance, budgetOverrun)
+
+    Dim strictBudget As Boolean: strictBudget = (UCase$(GetConfigValue(CFG_STRICT_BUDGET, "FALSE")) = "TRUE")
+
+    If mc <> 0 Or mr <> 0 Or (Not reconOk) Or charityImbalance Or (strictBudget And budgetOverrun) Then
         Err.Raise vbObjectError + 520, "CloseMonth", "Close blocked." & vbCrLf & gateMsg
     End If
 
@@ -903,7 +1195,6 @@ Public Sub CloseMonth(ByVal monthKey As String)
     ms.DataBodyRange.Cells(rowIdx, ms.ListColumns("ClosedFlag").Index).value = True
     ms.DataBodyRange.Cells(rowIdx, ms.ListColumns("ClosedAt").Index).value = Now
 
-    ' mark ledger rows closed
     Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
     If Not lo.DataBodyRange Is Nothing Then
         Dim i As Long
@@ -916,12 +1207,15 @@ Public Sub CloseMonth(ByVal monthKey As String)
 
     ProtectDataSheets
     AuditLog "CloseMonth", "", monthKey
+    GoTo CleanExit
+EH:
+    HandleError "CloseMonth", Err, monthKey
+CleanExit:
+    Application.EnableEvents = prevEV
+    Application.ScreenUpdating = prevSU
 End Sub
 
 Private Sub ProtectDataSheets()
-    Dim locksEnabled As String: locksEnabled = UCase$(GetConfigValue(CFG_LOCKS_ENABLED, "TRUE"))
-    If locksEnabled <> "TRUE" Then Exit Sub
-
     Dim ws As Worksheet
     For Each ws In ThisWorkbook.Worksheets
         If ws.name <> SH_HOME Then
@@ -937,8 +1231,13 @@ End Sub
 '========================
 
 Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
-    Dim prevSU As Boolean: prevSU = Application.ScreenUpdating
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
     Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    On Error GoTo EH
 
     Dim ws As Worksheet: Set ws = GetSheet(SH_REPORT)
     Dim oldVis As XlSheetVisibility: oldVis = ws.Visible
@@ -950,11 +1249,9 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
     ws.Range("B3").value = monthKey
     ws.Range("B4").value = fy
 
-    ' balances from month status (if present)
     Dim beginCash As Double: beginCash = GetMonthStatusValue(monthKey, "BeginningBalance")
     Dim endCash As Double: endCash = GetMonthStatusValue(monthKey, "EndingBalance")
 
-    ' month totals
     Dim inc As Double: inc = SumLedgerNet(monthKey, "Income", "(All)", "(All)", "(All)")
     Dim exp As Double: exp = SumLedgerNet(monthKey, "Expense", "(All)", "(All)", "(All)") + SumLedgerNet(monthKey, "Reimbursement", "(All)", "(All)", "(All)")
     Dim netChg As Double: netChg = inc - exp
@@ -965,18 +1262,16 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
     ws.Range("B10").value = netChg
     ws.Range("B11").value = endCash
 
-    ' controls snapshot
     ws.Range("E7").value = IIf(IsReconOk(monthKey), "YES", "NO")
     ws.Range("E8").value = IIf(IsMonthClosed(monthKey), "YES", "NO")
 
-    Dim mc As Long, mr As Long, mAmt As Double, reconOk As Boolean
-    Call GateCheckMonth(monthKey, mc, mr, mAmt, reconOk)
+    Dim mc As Long, mr As Long, mAmt As Double, reconOk As Boolean, charityImbalance As Boolean, budgetOverrun As Boolean
+    Call GateCheckMonth(monthKey, mc, mr, mAmt, reconOk, charityImbalance, budgetOverrun)
     ws.Range("E9").value = CStr(mr) & " / $" & Format$(mAmt, "0.00")
     ws.Range("E10").value = CStr(mc)
 
-    ' Budget vs Actual
     Dim categories As Variant
-    categories = Array("Administrative", "Programs", "Fundraising", "Marketing", "Travel", "Services", "Misc")
+    categories = GetCategoryList()
 
     Dim r As Long: r = 15
     Dim i As Long
@@ -985,7 +1280,7 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
         ws.Cells(r, 1).value = cat
 
         Dim b As Double: b = GetBudget(monthKey, cat)
-        Dim a As Double: a = SumLedgerNet(monthKey, "(All)", "(All)", "(All)", cat) ' actual expenses by category (net absolute)
+        Dim a As Double: a = SumLedgerNet(monthKey, "(All)", "(All)", "(All)", cat)
         ws.Cells(r, 2).value = b
         ws.Cells(r, 3).value = a
         ws.Cells(r, 4).value = b - a
@@ -997,46 +1292,80 @@ Public Sub GenerateMonthlyPacket(ByVal monthKey As String)
         r = r + 1
     Next i
 
-    ' charity month + ytd
     Dim charityRaisedM As Double: charityRaisedM = SumCharity(monthKey, "Raised")
     Dim charityPaidM As Double: charityPaidM = SumCharity(monthKey, "Paid")
-    Dim CharityHeldYTD As Double: CharityHeldYTD = SumCharityYTD(monthKey, "Raised") - SumCharityYTD(monthKey, "Paid")
+    Dim charityHeldYTDVal As Double: charityHeldYTDVal = SumCharityYTD(monthKey, "Raised") - SumCharityYTD(monthKey, "Paid")
 
     ws.Range("H14").value = charityRaisedM
     ws.Range("H15").value = charityPaidM
-    ws.Range("H16").value = CharityHeldYTD
+    ws.Range("H16").value = charityHeldYTDVal
+    ws.Range("H17").value = SumCharityYTD(monthKey, "Raised")
+    ws.Range("H18").value = SumCharityYTD(monthKey, "Paid")
 
-    ' event rollup
     WriteEventRollup ws, monthKey
 
-    ' ytd section
     Dim ytdInc As Double: ytdInc = SumLedgerNetYTD(monthKey, "Income")
     Dim ytdExp As Double: ytdExp = SumLedgerNetYTD(monthKey, "Expense") + SumLedgerNetYTD(monthKey, "Reimbursement")
     ws.Range("B36").value = ytdInc
     ws.Range("B37").value = ytdExp
     ws.Range("B38").value = ytdInc - ytdExp
 
-    Dim ytdBudgetVar As Double: ytdBudgetVar = BudgetVarYTD(monthKey)
+    Dim ytdBudgetVar As Double: ytdBudgetVar = budgetVarYTD(monthKey)
     ws.Range("B39").value = ytdBudgetVar
 
-    ' format
     ws.Columns("A:H").AutoFit
-    ws.Range("B7:B11,H14:H16,B36:B39").NumberFormat = "$#,##0.00"
-    ws.Range("B15:D21").NumberFormat = "$#,##0.00"
-    ws.Range("E15:E21").NumberFormat = "0.0%"
+    ws.Range("B7:B11,H14:H18,B36:B39").NumberFormat = "$#,##0.00"
+    ws.Range("B15:D30").NumberFormat = "$#,##0.00"
+    ws.Range("E15:E30").NumberFormat = "0.0%"
 
-    ' export pdf
-    Dim outFolder As String: outFolder = BoardPacketsFolderAbs()
+    Dim outFolder As String: outFolder = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_BOARDPACKETS, ".\BoardPackets\"))
     EnsureFolderPath outFolder
     Dim pdfPath As String: pdfPath = outFolder & "TCPP_BoardPacket_" & monthKey & ".pdf"
 
     ws.ExportAsFixedFormat Type:=xlTypePDF, Filename:=pdfPath, Quality:=xlQualityStandard, _
                            IncludeDocProperties:=True, IgnorePrintAreas:=False, OpenAfterPublish:=False
 
+    ArchiveBoardPacketSnapshot monthKey, ws
+
     ws.Visible = oldVis
     AuditLog "GenerateMonthlyPacket", "", pdfPath
 
+CleanExit:
+    Application.EnableEvents = prevEV
     Application.ScreenUpdating = prevSU
+    Exit Sub
+EH:
+    HandleError "GenerateMonthlyPacket", Err, monthKey
+    Resume CleanExit
+End Sub
+
+Private Sub ArchiveBoardPacketSnapshot(ByVal monthKey As String, ByVal wsReport As Worksheet)
+    Dim archWs As Worksheet: Set archWs = GetSheet(SH_ARCHIVE)
+    Dim archLo As ListObject: Set archLo = archWs.ListObjects("ARCH_BoardPackets")
+    Dim lr As ListRow: Set lr = archLo.ListRows.Add
+
+    lr.Range.Cells(1, archLo.ListColumns("MonthKey").Index).value = monthKey
+    lr.Range.Cells(1, archLo.ListColumns("FiscalYear").Index).value = FiscalYearForMonthKey(monthKey)
+    lr.Range.Cells(1, archLo.ListColumns("GeneratedAt").Index).value = Now
+    lr.Range.Cells(1, archLo.ListColumns("SnapshotRange").Index).value = "ARCH_BP_" & Replace(monthKey, "-", "_") & "!A1:H45"
+
+    Dim snapName As String: snapName = "ARCH_BP_" & Replace(monthKey, "-", "_")
+    Dim snapWs As Worksheet
+    On Error Resume Next
+    Set snapWs = ThisWorkbook.Worksheets(snapName)
+    On Error GoTo 0
+    If snapWs Is Nothing Then
+        Set snapWs = ThisWorkbook.Worksheets.Add(After:=archWs)
+        snapWs.name = snapName
+    Else
+        snapWs.Cells.ClearContents
+    End If
+
+    wsReport.Range("A1:H45").Copy
+    snapWs.Range("A1").PasteSpecial xlPasteValues
+    snapWs.Range("A1").PasteSpecial xlPasteFormats
+    Application.CutCopyMode = False
+    snapWs.Visible = xlSheetVeryHidden
 End Sub
 
 Private Function GetMonthStatusValue(ByVal monthKey As String, ByVal colName As String) As Double
@@ -1078,19 +1407,15 @@ Private Function SumLedgerNet(ByVal monthKey As String, ByVal txnType As String,
             If charityFilter <> "(All)" And charityFilter <> ch Then GoTo ContinueRow
 
             If categoryFilter <> "(All)" Then
-                ' category filter represents EXPENSE categorization; treat it as absolute outflow sum for Expense/Reimbursement
                 If cat <> categoryFilter Then GoTo ContinueRow
                 If LCase$(t) = "expense" Or LCase$(t) = "reimbursement" Then
                     SumLedgerNet = SumLedgerNet + Abs(CDbl(lo.DataBodyRange.Cells(i, netCol).value))
                 End If
             Else
-                ' normal net sum by type
                 If LCase$(t) = "income" Then
                     SumLedgerNet = SumLedgerNet + CDbl(lo.DataBodyRange.Cells(i, netCol).value)
                 ElseIf LCase$(t) = "expense" Or LCase$(t) = "reimbursement" Then
                     SumLedgerNet = SumLedgerNet + Abs(CDbl(lo.DataBodyRange.Cells(i, netCol).value))
-                ElseIf LCase$(t) = "adjustment" Then
-                    ' treat adjustments as net absolute if used for expense categories; otherwise ignore here
                 End If
             End If
         End If
@@ -1111,8 +1436,8 @@ End Function
 
 Private Function MonthKeyAdd(ByVal monthKey As String, ByVal months As Long) As String
     Dim y As Long, m As Long
-    y = CLng(Left$(monthKey, 4))
-    m = CLng(Right$(monthKey, 2))
+    y = CLng(left$(monthKey, 4))
+    m = CLng(right$(monthKey, 2))
     MonthKeyAdd = Format$(DateAdd("m", months, DateSerial(y, m, 1)), "yyyy-mm")
 End Function
 
@@ -1133,8 +1458,6 @@ Private Function SumLedgerNetYTD(ByVal monthKey As String, ByVal txnType As Stri
 End Function
 
 Private Function SumCharity(ByVal monthKey As String, ByVal mode As String) As Double
-    ' Raised = Income rows with Charity set
-    ' Paid = Expense/Reimbursement rows with Charity set (absolute)
     Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
     SumCharity = 0#
     If lo.DataBodyRange Is Nothing Then Exit Function
@@ -1173,8 +1496,20 @@ Private Function SumCharityYTD(ByVal monthKey As String, ByVal mode As String) A
     Loop
 End Function
 
+Public Function CharityHeldYTD(ByVal monthKey As String) As Double
+    On Error GoTo EH
+    CharityHeldYTD = SumCharityYTD(monthKey, "Raised") - SumCharityYTD(monthKey, "Paid")
+    Exit Function
+EH:
+    HandleError "CharityHeldYTD", Err, monthKey
+    CharityHeldYTD = 0#
+End Function
+
+Private Function CharityPaidExceedsRaisedYTD(ByVal monthKey As String) As Boolean
+    CharityPaidExceedsRaisedYTD = (SumCharityYTD(monthKey, "Paid") > SumCharityYTD(monthKey, "Raised"))
+End Function
+
 Private Sub WriteEventRollup(ByVal ws As Worksheet, ByVal monthKey As String)
-    ' clear area
     ws.Range("A26:D34").ClearContents
 
     Dim evLo As ListObject: Set evLo = GetTable(SH_LOOKUPS, T_EVENTS)
@@ -1206,6 +1541,7 @@ End Sub
 '========================
 
 Public Function GetBudget(ByVal monthKey As String, ByVal category As String) As Double
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_BUDGET, T_BUDGET)
     GetBudget = 0#
     If lo.DataBodyRange Is Nothing Then Exit Function
@@ -1221,120 +1557,892 @@ Public Function GetBudget(ByVal monthKey As String, ByVal category As String) As
             Exit Function
         End If
     Next i
+    Exit Function
+EH:
+    HandleError "GetBudget", Err, monthKey & "|" & category
+    GetBudget = 0#
 End Function
 
 Public Sub SetBudget(ByVal monthKey As String, ByVal category As String, ByVal amount As Double)
+    On Error GoTo EH
     Dim lo As ListObject: Set lo = GetTable(SH_BUDGET, T_BUDGET)
+    Dim rowIdx As Long
+    rowIdx = 0
 
-    Dim fy As Long: fy = FiscalYearForMonthKey(monthKey)
-
-    If lo.DataBodyRange Is Nothing Then
-        Dim lr0 As ListRow: Set lr0 = lo.ListRows.Add
-        lr0.Range.Cells(1, lo.ListColumns("MonthKey").Index).value = monthKey
-        lr0.Range.Cells(1, lo.ListColumns("FiscalYear").Index).value = fy
-        lr0.Range.Cells(1, lo.ListColumns("Category").Index).value = category
-        lr0.Range.Cells(1, lo.ListColumns("BudgetAmount").Index).value = amount
-        Exit Sub
+    If Not lo.DataBodyRange Is Nothing Then
+        Dim mkCol As Long: mkCol = lo.ListColumns("MonthKey").Index
+        Dim catCol As Long: catCol = lo.ListColumns("Category").Index
+        Dim i As Long
+        For i = 1 To lo.ListRows.count
+            If CStr(lo.DataBodyRange.Cells(i, mkCol).value) = monthKey And _
+               CStr(lo.DataBodyRange.Cells(i, catCol).value) = category Then
+                rowIdx = i
+                Exit For
+            End If
+        Next i
     End If
 
-    Dim mkCol As Long: mkCol = lo.ListColumns("MonthKey").Index
-    Dim catCol As Long: catCol = lo.ListColumns("Category").Index
-    Dim amtCol As Long: amtCol = lo.ListColumns("BudgetAmount").Index
-    Dim fyCol As Long: fyCol = lo.ListColumns("FiscalYear").Index
+    If rowIdx = 0 Then
+        Dim lr As ListRow: Set lr = lo.ListRows.Add
+        rowIdx = lr.Index
+        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MonthKey").Index).value = monthKey
+        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("FiscalYear").Index).value = FiscalYearForMonthKey(monthKey)
+        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Category").Index).value = category
+    End If
 
-    Dim i As Long
-    For i = 1 To lo.ListRows.count
-        If CStr(lo.DataBodyRange.Cells(i, mkCol).value) = monthKey And CStr(lo.DataBodyRange.Cells(i, catCol).value) = category Then
-            lo.DataBodyRange.Cells(i, amtCol).value = amount
-            lo.DataBodyRange.Cells(i, fyCol).value = fy
-            Exit Sub
-        End If
-    Next i
-
-    Dim lr As ListRow: Set lr = lo.ListRows.Add
-    lr.Range.Cells(1, mkCol).value = monthKey
-    lr.Range.Cells(1, fyCol).value = fy
-    lr.Range.Cells(1, catCol).value = category
-    lr.Range.Cells(1, amtCol).value = amount
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("BudgetAmount").Index).value = amount
+    Exit Sub
+EH:
+    HandleError "SetBudget", Err, monthKey & "|" & category
 End Sub
 
-Private Function BudgetVarYTD(ByVal monthKey As String) As Double
+Public Function budgetVarYTD(ByVal monthKey As String) As Double
+    On Error GoTo EH
     Dim startKey As String: startKey = FiscalYearStartMonthKey(monthKey)
     Dim cur As String: cur = startKey
-
-    Dim cats As Variant
-    cats = Array("Administrative", "Programs", "Fundraising", "Marketing", "Travel", "Services", "Misc")
-
-    Dim varSum As Double: varSum = 0#
+    Dim total As Double: total = 0#
 
     Do While MonthKeyLessOrEqual(cur, monthKey)
-        Dim i As Long
-        For i = LBound(cats) To UBound(cats)
-            Dim cat As String: cat = CStr(cats(i))
-            Dim b As Double: b = GetBudget(cur, cat)
-            Dim a As Double: a = SumLedgerNet(cur, "(All)", "(All)", "(All)", cat)
-            varSum = varSum + (b - a)
-        Next i
+        total = total + BudgetVarMonthValue(cur)
         cur = MonthKeyAdd(cur, 1)
     Loop
 
-    BudgetVarYTD = varSum
+    budgetVarYTD = total
+    Exit Function
+EH:
+    HandleError "BudgetVarYTD", Err, monthKey
+    budgetVarYTD = 0#
 End Function
 
-'========================
-' Dashboard calculations
-'========================
+Private Function BudgetVarMonthValue(ByVal monthKey As String) As Double
+    Dim categories As Variant
+    categories = GetCategoryList()
 
-Public Sub GetExceptionCounts(ByVal monthKey As String, ByRef cntUncategorized As Long, ByRef cntMissingReceipts As Long, ByRef amtMissingReceipts As Double)
-    Dim mc As Long, mr As Long
-    Dim mAmt As Double, reconOk As Boolean
-    Call GateCheckMonth(monthKey, mc, mr, mAmt, reconOk)
-    cntUncategorized = mc
-    cntMissingReceipts = mr
-    amtMissingReceipts = mAmt
+    Dim i As Long
+    For i = LBound(categories) To UBound(categories)
+        Dim cat As String: cat = CStr(categories(i))
+        BudgetVarMonthValue = BudgetVarMonthValue + (GetBudget(monthKey, cat) - SumLedgerNet(monthKey, "(All)", "(All)", "(All)", cat))
+    Next i
+End Function
+
+Private Function HasBudgetOverrun(ByVal monthKey As String) As Boolean
+    Dim categories As Variant
+    categories = GetCategoryList()
+
+    Dim i As Long
+    For i = LBound(categories) To UBound(categories)
+        Dim cat As String: cat = CStr(categories(i))
+        Dim b As Double: b = GetBudget(monthKey, cat)
+        Dim a As Double: a = SumLedgerNet(monthKey, "(All)", "(All)", "(All)", cat)
+        If b > 0 And a > b Then
+            HasBudgetOverrun = True
+            Exit Function
+        End If
+    Next i
+    HasBudgetOverrun = False
+End Function
+
+Private Function GetCategoryList() As Variant
+    Dim lo As ListObject: Set lo = GetTable(SH_LOOKUPS, T_COA)
+    Dim items() As String
+    Dim count As Long
+
+    If lo.DataBodyRange Is Nothing Then
+        GetCategoryList = Array("Administrative", "Programs", "Fundraising", "Marketing", "Travel", "Services", "Misc")
+        Exit Function
+    End If
+
+    Dim cell As Range
+    For Each cell In lo.ListColumns(1).DataBodyRange.Cells
+        If Len(Trim$(CStr(cell.value))) > 0 Then
+            ReDim Preserve items(count)
+            items(count) = CStr(cell.value)
+            count = count + 1
+        End If
+    Next cell
+
+    If count = 0 Then
+        GetCategoryList = Array("Administrative", "Programs", "Fundraising", "Marketing", "Travel", "Services", "Misc")
+    Else
+        GetCategoryList = items
+    End If
+End Function
+
+Private Sub GetReceiptExceptions(ByVal monthKey As String, ByRef missingReceipts As Long, ByRef missingReceiptAmt As Double)
+    missingReceipts = 0
+    missingReceiptAmt = 0#
+
+    Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
+    If lo.DataBodyRange Is Nothing Then Exit Sub
+
+    Dim mkCol As Long: mkCol = lo.ListColumns("MonthKey").Index
+    Dim rrCol As Long: rrCol = lo.ListColumns("ReceiptRequired").Index
+    Dim rsCol As Long: rsCol = lo.ListColumns("ReceiptStatus").Index
+    Dim netCol As Long: netCol = lo.ListColumns("Net").Index
+
+    Dim i As Long
+    For i = 1 To lo.ListRows.count
+        If CStr(lo.DataBodyRange.Cells(i, mkCol).value) = monthKey Then
+            If CBool(lo.DataBodyRange.Cells(i, rrCol).value) Then
+                Dim rs As String: rs = CStr(lo.DataBodyRange.Cells(i, rsCol).value)
+                If rs <> "Recorded" And rs <> "Waived" Then
+                    missingReceipts = missingReceipts + 1
+                    missingReceiptAmt = missingReceiptAmt + Abs(CDbl(lo.DataBodyRange.Cells(i, netCol).value))
+                End If
+            End If
+        End If
+    Next i
 End Sub
 
-Public Function CharityHeldYTD(ByVal monthKey As String) As Double
-    CharityHeldYTD = SumCharityYTD(monthKey, "Raised") - SumCharityYTD(monthKey, "Paid")
+Private Function GetUncategorizedCount(ByVal monthKey As String) As Long
+    GetUncategorizedCount = 0
+    Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    Dim mkCol As Long: mkCol = lo.ListColumns("MonthKey").Index
+    Dim catCol As Long: catCol = lo.ListColumns("Category").Index
+
+    Dim i As Long
+    For i = 1 To lo.ListRows.count
+        If CStr(lo.DataBodyRange.Cells(i, mkCol).value) = monthKey Then
+            If Len(Trim$(CStr(lo.DataBodyRange.Cells(i, catCol).value))) = 0 Then
+                GetUncategorizedCount = GetUncategorizedCount + 1
+            End If
+        End If
+    Next i
 End Function
 
-Public Function SelfTestReport() As String
-    Dim ok As Boolean: ok = True
-    Dim msg As String: msg = ""
+'========================
+' Exceptions / dashboard support
+'========================
 
-    msg = msg & "Sheets:" & vbCrLf
-    msg = msg & "- " & SH_HOME & ": " & SheetExists(SH_HOME) & vbCrLf
-    msg = msg & "- " & SH_LEDGER & ": " & SheetExists(SH_LEDGER) & vbCrLf
-    msg = msg & "- " & SH_LOOKUPS & ": " & SheetExists(SH_LOOKUPS) & vbCrLf
-    msg = msg & "- " & SH_BUDGET & ": " & SheetExists(SH_BUDGET) & vbCrLf
-    msg = msg & "- " & SH_MONTHSTATUS & ": " & SheetExists(SH_MONTHSTATUS) & vbCrLf
-    msg = msg & "- " & SH_AUDIT & ": " & SheetExists(SH_AUDIT) & vbCrLf
-    msg = msg & "- " & SH_REPORT & ": " & SheetExists(SH_REPORT) & vbCrLf & vbCrLf
+Public Sub GetExceptionCounts(ByVal monthKey As String, ByRef uncategorized As Long, ByRef missingReceipts As Long, ByRef missingReceiptAmt As Double)
+    On Error GoTo EH
+    Dim reconOk As Boolean, charityImbalance As Boolean, budgetOverrun As Boolean
+    Dim msg As String
+    msg = GateCheckMonth(monthKey, uncategorized, missingReceipts, missingReceiptAmt, reconOk, charityImbalance, budgetOverrun)
+    Exit Sub
+EH:
+    HandleError "GetExceptionCounts", Err, monthKey
+End Sub
 
-    msg = msg & "Tables:" & vbCrLf
-    msg = msg & "- " & T_LEDGER & ": " & TableExists(SH_LEDGER, T_LEDGER) & vbCrLf
-    msg = msg & "- " & T_COA & ": " & TableExists(SH_LOOKUPS, T_COA) & vbCrLf
-    msg = msg & "- " & T_EVENTS & ": " & TableExists(SH_LOOKUPS, T_EVENTS) & vbCrLf
-    msg = msg & "- " & T_CHARITIES & ": " & TableExists(SH_LOOKUPS, T_CHARITIES) & vbCrLf
-    msg = msg & "- " & T_PAYMETHOD & ": " & TableExists(SH_LOOKUPS, T_PAYMETHOD) & vbCrLf
-    msg = msg & "- " & T_CONFIG & ": " & TableExists(SH_LOOKUPS, T_CONFIG) & vbCrLf
-    msg = msg & "- " & T_BUDGET & ": " & TableExists(SH_BUDGET, T_BUDGET) & vbCrLf
-    msg = msg & "- " & T_MONTHSTATUS & ": " & TableExists(SH_MONTHSTATUS, T_MONTHSTATUS) & vbCrLf
-    msg = msg & "- " & T_AUDIT & ": " & TableExists(SH_AUDIT, T_AUDIT) & vbCrLf
+Public Sub GetDashboardMetrics(ByVal monthKey As String, ByVal eventFilter As String, ByVal charityFilter As String, _
+                               ByRef totalIncome As Double, ByRef totalExpense As Double, ByRef netChange As Double, _
+                               ByRef missingReceiptCount As Long, ByRef missingReceiptAmt As Double, _
+                               ByRef uncategorizedCount As Long, ByRef charityRaised As Double, ByRef charityPaid As Double, _
+                               ByRef charityHeld As Double, ByRef budgetVarMonth As Double, ByRef budgetVarYTD As Double)
+    On Error GoTo EH
+    totalIncome = SumLedgerNet(monthKey, "Income", eventFilter, charityFilter, "(All)")
+    totalExpense = SumLedgerNet(monthKey, "Expense", eventFilter, charityFilter, "(All)") + _
+                   SumLedgerNet(monthKey, "Reimbursement", eventFilter, charityFilter, "(All)")
+    netChange = totalIncome - totalExpense
+
+    GetReceiptExceptions monthKey, missingReceiptCount, missingReceiptAmt
+    uncategorizedCount = GetUncategorizedCount(monthKey)
+
+    charityRaised = SumCharity(monthKey, "Raised")
+    charityPaid = SumCharity(monthKey, "Paid")
+    charityHeld = CharityHeldYTD(monthKey)
+
+    budgetVarMonth = BudgetVarMonthValue(monthKey)
+    budgetVarYTD = budgetVarYTD(monthKey)
+    Exit Sub
+EH:
+    HandleError "GetDashboardMetrics", Err, monthKey
+End Sub
+
+'========================
+' Minutes + Agenda (Word automation)
+'========================
+
+Public Function CreateMeeting(ByVal meetingDate As Date, ByVal scribe As String, ByVal location As String) As String
+    On Error GoTo EH
+    Dim meetingId As String
+    meetingId = "MTG-" & Format$(meetingDate, "yyyymmdd") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    Dim docPath As String
+    docPath = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_MINUTES_DOCX, ".\Minutes\DOCX\")) & "TCPP_Minutes_" & Format$(meetingDate, "yyyy-mm-dd") & ".docx"
+
+    Dim templatePath As String
+    templatePath = GetTemplatePath("TCPP Board Meeting Minutes Template.docx")
+    If Len(Dir(templatePath)) = 0 Then
+        Err.Raise vbObjectError + 704, "CreateMeeting", "Minutes template not found: " & templatePath
+    End If
+    FileCopy templatePath, docPath
+
+    Dim lo As ListObject: Set lo = GetTable(SH_MEETINGS, T_MEETINGS)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    lr.Range.Cells(1, lo.ListColumns("MeetingID").Index).value = meetingId
+    lr.Range.Cells(1, lo.ListColumns("MeetingDate").Index).value = meetingDate
+    lr.Range.Cells(1, lo.ListColumns("StartTime").Index).value = ""
+    lr.Range.Cells(1, lo.ListColumns("EndTime").Index).value = ""
+    lr.Range.Cells(1, lo.ListColumns("Scribe").Index).value = scribe
+    lr.Range.Cells(1, lo.ListColumns("Location").Index).value = location
+    lr.Range.Cells(1, lo.ListColumns("MinutesDocPath").Index).value = docPath
+    lr.Range.Cells(1, lo.ListColumns("MinutesPdfPath").Index).value = ""
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+
+    OpenWordDocument docPath
+    AuditLog "CreateMeeting", meetingId, docPath
+    CreateMeeting = meetingId
+    Exit Function
+EH:
+    HandleError "CreateMeeting", Err, Format$(meetingDate, "yyyy-mm-dd")
+    CreateMeeting = ""
+End Function
+
+Public Sub ExportMeetingPdf(ByVal meetingId As String)
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_MEETINGS, T_MEETINGS)
+    Dim rowIdx As Long: rowIdx = FindMeetingRowIndex(meetingId)
+    If rowIdx = 0 Then Err.Raise vbObjectError + 702, "ExportMeetingPdf", "MeetingID not found"
+
+    Dim meetingDate As Date
+    meetingDate = CDate(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MeetingDate").Index).value)
+
+    Dim docPath As String
+    docPath = CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MinutesDocPath").Index).value)
+    Dim pdfPath As String
+    pdfPath = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_MINUTES_PDF, ".\Minutes\PDF\")) & "TCPP_Minutes_" & Format$(meetingDate, "yyyy-mm-dd") & ".pdf"
+
+    ExportWordPdf docPath, pdfPath
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MinutesPdfPath").Index).value = pdfPath
+
+    AuditLog "ExportMeetingPdf", meetingId, pdfPath
+    GoTo CleanExit
+EH:
+    HandleError "ExportMeetingPdf", Err, meetingId
+CleanExit:
+    Application.EnableEvents = prevEV
+    Application.ScreenUpdating = prevSU
+End Sub
+
+Public Function CreateAgenda(ByVal agendaDate As Date) As String
+    On Error GoTo EH
+    Dim agendaId As String
+    agendaId = "AGD-" & Format$(agendaDate, "yyyymmdd") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    Dim docPath As String
+    docPath = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_DOCX, ".\Agenda\DOCX\")) & "TCPP_Agenda_" & Format$(agendaDate, "yyyy-mm-dd") & ".docx"
+
+    Dim templatePath As String
+    templatePath = GetTemplatePath("Template Meeting Agenda.docx")
+    If Len(Dir(templatePath)) = 0 Then
+        Err.Raise vbObjectError + 705, "CreateAgenda", "Agenda template not found: " & templatePath
+    End If
+    FileCopy templatePath, docPath
+
+    Dim lo As ListObject: Set lo = GetTable(SH_AGENDA, T_AGENDA)
+    Dim lr As ListRow: Set lr = lo.ListRows.Add
+
+    lr.Range.Cells(1, lo.ListColumns("AgendaID").Index).value = agendaId
+    lr.Range.Cells(1, lo.ListColumns("AgendaDate").Index).value = agendaDate
+    lr.Range.Cells(1, lo.ListColumns("DocPath").Index).value = docPath
+    lr.Range.Cells(1, lo.ListColumns("PdfPath").Index).value = ""
+    lr.Range.Cells(1, lo.ListColumns("CreatedAt").Index).value = Now
+
+    OpenWordDocument docPath
+    AuditLog "CreateAgenda", agendaId, docPath
+    CreateAgenda = agendaId
+    Exit Function
+EH:
+    HandleError "CreateAgenda", Err, Format$(agendaDate, "yyyy-mm-dd")
+    CreateAgenda = ""
+End Function
+
+Public Sub ExportAgendaPdf(ByVal agendaId As String)
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_AGENDA, T_AGENDA)
+    Dim rowIdx As Long: rowIdx = FindAgendaRowIndex(agendaId)
+    If rowIdx = 0 Then Err.Raise vbObjectError + 703, "ExportAgendaPdf", "AgendaID not found"
+
+    Dim agendaDate As Date
+    agendaDate = CDate(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("AgendaDate").Index).value)
+
+    Dim docPath As String
+    docPath = CStr(lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DocPath").Index).value)
+    Dim pdfPath As String
+    pdfPath = ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\")) & "TCPP_Agenda_" & Format$(agendaDate, "yyyy-mm-dd") & ".pdf"
+
+    ExportWordPdf docPath, pdfPath
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("PdfPath").Index).value = pdfPath
+
+    AuditLog "ExportAgendaPdf", agendaId, pdfPath
+    GoTo CleanExit
+EH:
+    HandleError "ExportAgendaPdf", Err, agendaId
+CleanExit:
+    Application.EnableEvents = prevEV
+    Application.ScreenUpdating = prevSU
+End Sub
+
+Private Function FindMeetingRowIndex(ByVal meetingId As String) As Long
+    Dim lo As ListObject: Set lo = GetTable(SH_MEETINGS, T_MEETINGS)
+    FindMeetingRowIndex = 0
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    Dim r As Range
+    For Each r In lo.ListColumns("MeetingID").DataBodyRange.Cells
+        If CStr(r.value) = meetingId Then
+            FindMeetingRowIndex = r.Row - lo.DataBodyRange.Row + 1
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function FindAgendaRowIndex(ByVal agendaId As String) As Long
+    Dim lo As ListObject: Set lo = GetTable(SH_AGENDA, T_AGENDA)
+    FindAgendaRowIndex = 0
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    Dim r As Range
+    For Each r In lo.ListColumns("AgendaID").DataBodyRange.Cells
+        If CStr(r.value) = agendaId Then
+            FindAgendaRowIndex = r.Row - lo.DataBodyRange.Row + 1
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function GetTemplatePath(ByVal templateName As String) As String
+    Dim basePath As String: basePath = ThisWorkbook.path
+    If Len(basePath) = 0 Then basePath = CurDir$
+    GetTemplatePath = basePath & "\" & templateName
+End Function
+
+Private Sub OpenWordDocument(ByVal docPath As String)
+    Dim wdApp As Object
+    If Len(Dir(docPath)) = 0 Then Err.Raise vbObjectError + 706, "OpenWordDocument", "Doc not found: " & docPath
+    On Error Resume Next
+    Set wdApp = GetObject(, "Word.Application")
+    If wdApp Is Nothing Then Set wdApp = CreateObject("Word.Application")
+    On Error GoTo 0
+
+    wdApp.Visible = True
+    wdApp.Documents.Open docPath
+End Sub
+
+Private Sub ExportWordPdf(ByVal docPath As String, ByVal pdfPath As String)
+    Dim wdApp As Object, doc As Object
+    On Error GoTo EH
+    If Len(Dir(docPath)) = 0 Then Err.Raise vbObjectError + 707, "ExportWordPdf", "Doc not found: " & docPath
+    Set wdApp = CreateObject("Word.Application")
+    wdApp.Visible = False
+    Set doc = wdApp.Documents.Open(docPath)
+    doc.ExportAsFixedFormat OutputFileName:=pdfPath, ExportFormat:=17
+    doc.Close SaveChanges:=False
+    wdApp.Quit
+    Exit Sub
+EH:
+    On Error Resume Next
+    If Not doc Is Nothing Then doc.Close SaveChanges:=False
+    If Not wdApp Is Nothing Then wdApp.Quit
+    On Error GoTo 0
+    Err.Raise Err.Number, "ExportWordPdf", Err.Description
+End Sub
+
+'========================
+' Members
+'========================
+
+Public Sub UpsertMember(ByVal memberName As String, ByVal memberEmail As String, ByVal membershipType As String, _
+                        ByVal duesPaid As Boolean, ByVal duesPaidDate As Variant, ByVal duesAmount As Double, _
+                        ByVal joinedDate As Variant, ByVal notes As String, Optional ByVal externalSource As String = "Manual", _
+                        Optional ByVal externalMemberId As String = "")
+    On Error GoTo EH
+    Dim lo As ListObject: Set lo = GetTable(SH_MEMBERS, T_MEMBERS)
+    Dim rowIdx As Long: rowIdx = FindMemberRowIndex(memberEmail, memberName)
+
+    If rowIdx = 0 Then
+        Dim lr As ListRow: Set lr = lo.ListRows.Add
+        rowIdx = lr.Index
+        lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberID").Index).value = "MBR-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+    End If
+
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberName").Index).value = memberName
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MemberEmail").Index).value = memberEmail
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("MembershipType").Index).value = membershipType
+    If IsDate(joinedDate) Then lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("JoinedDate").Index).value = CDate(joinedDate)
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DuesPaidFlag").Index).value = IIf(duesPaid, "Y", "N")
+    If IsDate(duesPaidDate) Then lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DuesPaidDate").Index).value = CDate(duesPaidDate)
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("DuesAmount").Index).value = duesAmount
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("RenewalDate").Index).value = CalculateRenewalDate(duesPaidDate)
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("Notes").Index).value = notes
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ExternalSource").Index).value = externalSource
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("ExternalMemberID").Index).value = externalMemberId
+    lo.DataBodyRange.Cells(rowIdx, lo.ListColumns("LastUpdatedAt").Index).value = Now
+    Exit Sub
+EH:
+    HandleError "UpsertMember", Err, memberEmail
+End Sub
+
+Public Function CalculateRenewalDate(ByVal duesPaidDate As Variant) As Variant
+    On Error GoTo EH
+    If Not IsDate(duesPaidDate) Then
+        CalculateRenewalDate = ""
+        Exit Function
+    End If
+
+    Dim months As Long
+    months = CLng(GetConfigValue(CFG_RENEWAL_INTERVAL, "12"))
+    CalculateRenewalDate = DateAdd("m", months, CDate(duesPaidDate))
+    Exit Function
+EH:
+    HandleError "CalculateRenewalDate", Err, ""
+    CalculateRenewalDate = ""
+End Function
+
+Private Function FindMemberRowIndex(ByVal email As String, ByVal name As String) As Long
+    Dim lo As ListObject: Set lo = GetTable(SH_MEMBERS, T_MEMBERS)
+    FindMemberRowIndex = 0
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    Dim r As Range
+    If Len(email) > 0 Then
+        For Each r In lo.ListColumns("MemberEmail").DataBodyRange.Cells
+            If LCase$(CStr(r.value)) = LCase$(email) Then
+                FindMemberRowIndex = r.Row - lo.DataBodyRange.Row + 1
+                Exit Function
+            End If
+        Next r
+    End If
+
+    For Each r In lo.ListColumns("MemberName").DataBodyRange.Cells
+        If LCase$(CStr(r.value)) = LCase$(name) Then
+            FindMemberRowIndex = r.Row - lo.DataBodyRange.Row + 1
+            Exit Function
+        End If
+    Next r
+End Function
+
+'========================
+' Imports (scaffold)
+'========================
+
+Public Sub ImportCsvRaw(ByVal sourceName As String, ByVal filePath As String)
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    On Error GoTo EH
+    If Len(Dir(filePath)) = 0 Then Err.Raise vbObjectError + 708, "ImportCsvRaw", "File not found: " & filePath
+
+    Dim batchId As String
+    batchId = "IMP-" & Format$(Now, "yyyymmdd-hhnnss") & "-" & Format$(Int((9999 * Rnd) + 1), "0000")
+
+    Dim fileHash As String
+    fileHash = CStr(FileLen(filePath)) & "-" & Format$(FileDateTime(filePath), "yyyymmddhhnnss")
+
+    Dim rawTable As ListObject
+    If LCase$(sourceName) = "zeffy" Then
+        Set rawTable = GetTable(SH_IMPORTS, T_ZEFFY_RAW)
+    Else
+        Set rawTable = GetTable(SH_IMPORTS, T_BLAZE_RAW)
+    End If
+
+    Dim rowCount As Long
+    Dim f As Integer: f = FreeFile
+    Open filePath For Input As #f
+
+    Dim headerLine As String
+    Dim headers() As String
+    Dim hasHeader As Boolean
+
+    If Not EOF(f) Then
+        Line Input #f, headerLine
+        headers = ParseCsvLine(headerLine)
+        hasHeader = True
+    End If
+
+    Dim mapDict As Object
+    Set mapDict = GetImportMapping(sourceName)
+
+    Dim line As String
+    Do While Not EOF(f)
+        Line Input #f, line
+        If Len(Trim$(line)) = 0 Then GoTo ContinueRow
+
+        Dim rowHash As String: rowHash = CStr(CLng(Crc32(line)))
+        Dim data() As String
+        If hasHeader Then data = ParseCsvLine(line)
+
+        Dim extId As String
+        extId = ""
+        If hasHeader Then extId = ExtractMappedValue(mapDict, headers, data, "ExternalTxnID")
+
+        If Len(extId) > 0 Then
+            If LedgerHasExternalTxn(sourceName, extId) Then GoTo ContinueRow
+        ElseIf RawRowExists(rawTable, rowHash) Then
+            GoTo ContinueRow
+        End If
+
+        Dim lr As ListRow: Set lr = rawTable.ListRows.Add
+        lr.Range.Cells(1, rawTable.ListColumns("ImportBatchID").Index).value = batchId
+        lr.Range.Cells(1, rawTable.ListColumns("RowHash").Index).value = rowHash
+        lr.Range.Cells(1, rawTable.ListColumns("RawData").Index).value = line
+        rowCount = rowCount + 1
+
+        If mapDict.count > 0 Then
+            TryMapRowToLedger sourceName, batchId, headers, data, mapDict
+        End If
+ContinueRow:
+    Loop
+    Close #f
+
+    Dim log As ListObject: Set log = GetTable(SH_IMPORTS, T_IMPORTLOG)
+    Dim lrLog As ListRow: Set lrLog = log.ListRows.Add
+    lrLog.Range.Cells(1, log.ListColumns("ImportBatchID").Index).value = batchId
+    lrLog.Range.Cells(1, log.ListColumns("Source").Index).value = sourceName
+    lrLog.Range.Cells(1, log.ListColumns("ImportedAt").Index).value = Now
+    lrLog.Range.Cells(1, log.ListColumns("FileName").Index).value = filePath
+    lrLog.Range.Cells(1, log.ListColumns("FileHash").Index).value = fileHash
+    lrLog.Range.Cells(1, log.ListColumns("RowCount").Index).value = rowCount
+    lrLog.Range.Cells(1, log.ListColumns("Notes").Index).value = "Raw staging import"
+    lrLog.Range.Cells(1, log.ListColumns("Status").Index).value = "OK"
+
+    AuditLog "ImportCsvRaw", batchId, sourceName & " rows=" & CStr(rowCount)
+    GoTo CleanExit
+EH:
+    HandleError "ImportCsvRaw", Err, filePath
+CleanExit:
+    Application.EnableEvents = prevEV
+    Application.ScreenUpdating = prevSU
+End Sub
+
+Public Sub ExportDuesReport()
+    Dim prevSU As Boolean, prevEV As Boolean
+    prevSU = Application.ScreenUpdating
+    prevEV = Application.EnableEvents
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+
+    On Error GoTo EH
+
+    Dim outFolder As String
+    outFolder = ResolveWorkbookRelativePath(".\\Reports\\")
+    EnsureFolderPath outFolder
+
+    Dim outPath As String
+    outPath = outFolder & "TCPP_DuesStatus_" & Format$(Date, "yyyymmdd") & ".csv"
+
+    Dim lo As ListObject: Set lo = GetTable(SH_MEMBERS, T_MEMBERS)
+    Dim f As Integer: f = FreeFile
+    Open outPath For Output As #f
+
+    Print #f, "MemberName,MemberEmail,MembershipType,DuesPaidFlag,DuesPaidDate,DuesAmount,RenewalDate,Notes"
+    If Not lo.DataBodyRange Is Nothing Then
+        Dim i As Long
+        For i = 1 To lo.ListRows.count
+            Print #f, CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("MemberName").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("MemberEmail").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("MembershipType").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("DuesPaidFlag").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("DuesPaidDate").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("DuesAmount").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("RenewalDate").Index).value) & "," & _
+                      CsvCell(lo.DataBodyRange.Cells(i, lo.ListColumns("Notes").Index).value)
+        Next i
+    End If
+
+    Close #f
+    AuditLog "ExportDuesReport", "", outPath
+    MsgBox "Dues report exported: " & outPath, vbInformation, "TCPP"
+
+CleanExit:
+    Application.EnableEvents = prevEV
+    Application.ScreenUpdating = prevSU
+    Exit Sub
+EH:
+    HandleError "ExportDuesReport", Err, ""
+    Resume CleanExit
+End Sub
+
+Private Function CsvCell(ByVal v As Variant) As String
+    Dim s As String: s = CStr(v)
+    s = Replace(s, """", """""")
+    CsvCell = """" & s & """"
+End Function
+
+Private Function GetImportMapping(ByVal sourceName As String) As Object
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1
+
+    Dim mapTable As ListObject
+    If LCase$(sourceName) = "zeffy" Then
+        Set mapTable = GetTable(SH_IMPORTS, T_IMPORTMAP_ZEFFY)
+    Else
+        Set mapTable = GetTable(SH_IMPORTS, T_IMPORTMAP_BLAZE)
+    End If
+
+    If mapTable.DataBodyRange Is Nothing Then
+        Set GetImportMapping = dict
+        Exit Function
+    End If
+
+    Dim i As Long
+    For i = 1 To mapTable.ListRows.count
+        Dim src As String: src = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("SourceColumn").Index).value)
+        Dim tgt As String: tgt = CStr(mapTable.DataBodyRange.Cells(i, mapTable.ListColumns("TargetColumn").Index).value)
+        If Len(src) > 0 And Len(tgt) > 0 Then
+            dict(LCase$(tgt)) = src
+        End If
+    Next i
+
+    Set GetImportMapping = dict
+End Function
+
+Private Function ExtractMappedValue(ByVal mapDict As Object, ByVal headers() As String, ByVal data() As String, ByVal targetCol As String) As String
+    Dim srcCol As String
+    ExtractMappedValue = ""
+    If mapDict.Exists(LCase$(targetCol)) Then
+        srcCol = mapDict(LCase$(targetCol))
+        Dim idx As Long: idx = HeaderIndex(headers, srcCol)
+        If idx >= 0 And idx <= UBound(data) Then
+            ExtractMappedValue = data(idx)
+        End If
+    End If
+End Function
+
+Private Sub TryMapRowToLedger(ByVal sourceName As String, ByVal batchId As String, ByVal headers() As String, ByVal data() As String, ByVal mapDict As Object)
+    On Error GoTo EH
+
+    Dim txnDate As Date
+    Dim txnType As String
+    Dim txnSubtype As String
+    Dim category As String
+    Dim eventName As String
+    Dim charityName As String
+    Dim gross As Double
+    Dim fees As Double
+    Dim paymentMethod As String
+    Dim sourceType As String
+    Dim sourceNameVal As String
+    Dim memberName As String
+    Dim memberEmail As String
+    Dim memo As String
+    Dim extId As String
+
+    txnDate = CDate(ExtractMappedValue(mapDict, headers, data, "Date"))
+    txnType = ExtractMappedValue(mapDict, headers, data, "TxnType")
+    txnSubtype = ExtractMappedValue(mapDict, headers, data, "TxnSubtype")
+    category = ExtractMappedValue(mapDict, headers, data, "Category")
+    eventName = ExtractMappedValue(mapDict, headers, data, "Event")
+    charityName = ExtractMappedValue(mapDict, headers, data, "Charity")
+    gross = CDbl(Val(ExtractMappedValue(mapDict, headers, data, "Gross")))
+    fees = CDbl(Val(ExtractMappedValue(mapDict, headers, data, "Fees")))
+    paymentMethod = ExtractMappedValue(mapDict, headers, data, "PaymentMethod")
+    sourceType = ExtractMappedValue(mapDict, headers, data, "SourceType")
+    sourceNameVal = ExtractMappedValue(mapDict, headers, data, "SourceName")
+    memberName = ExtractMappedValue(mapDict, headers, data, "MemberName")
+    memberEmail = ExtractMappedValue(mapDict, headers, data, "MemberEmail")
+    memo = ExtractMappedValue(mapDict, headers, data, "Memo")
+    extId = ExtractMappedValue(mapDict, headers, data, "ExternalTxnID")
+
+    If Len(txnType) = 0 Or txnDate = 0 Then Exit Sub
+
+    AddLedgerEntry txnDate, txnType, txnSubtype, category, eventName, charityName, gross, fees, paymentMethod, _
+        sourceType, sourceNameVal, memberName, memberEmail, memo, False, sourceName, extId, batchId, False
+
+    If LCase$(sourceName) = "zeffy" And Len(memberEmail) > 0 Then
+        UpsertMember memberName, memberEmail, ExtractMappedValue(mapDict, headers, data, "MembershipType"), _
+            True, txnDate, gross, txnDate, "Imported from Zeffy", "Zeffy", ExtractMappedValue(mapDict, headers, data, "ExternalMemberID")
+    End If
+
+    Exit Sub
+EH:
+    LogError "TryMapRowToLedger", Err, sourceName & " batch=" & batchId
+End Sub
+
+Private Function LedgerHasExternalTxn(ByVal sourceName As String, ByVal extId As String) As Boolean
+    LedgerHasExternalTxn = False
+    Dim lo As ListObject: Set lo = GetTable(SH_LEDGER, T_LEDGER)
+    If lo.DataBodyRange Is Nothing Then Exit Function
+
+    Dim sourceCol As Long: sourceCol = lo.ListColumns("ExternalSource").Index
+    Dim extCol As Long: extCol = lo.ListColumns("ExternalTxnID").Index
+    Dim i As Long
+    For i = 1 To lo.ListRows.count
+        If LCase$(CStr(lo.DataBodyRange.Cells(i, sourceCol).value)) = LCase$(sourceName) And _
+           CStr(lo.DataBodyRange.Cells(i, extCol).value) = extId Then
+            LedgerHasExternalTxn = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function HeaderIndex(ByVal headers() As String, ByVal name As String) As Long
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        If LCase$(Trim$(headers(i))) = LCase$(Trim$(name)) Then
+            HeaderIndex = i
+            Exit Function
+        End If
+    Next i
+    HeaderIndex = -1
+End Function
+
+Private Function ParseCsvLine(ByVal line As String) As String()
+    Dim result() As String
+    Dim idx As Long: idx = 0
+    Dim i As Long
+    Dim inQuotes As Boolean
+    Dim token As String
+    For i = 1 To Len(line)
+        Dim ch As String: ch = Mid$(line, i, 1)
+        If ch = """" Then
+            If inQuotes And i < Len(line) And Mid$(line, i + 1, 1) = """" Then
+                token = token & """"
+                i = i + 1
+            Else
+                inQuotes = Not inQuotes
+            End If
+        ElseIf ch = "," And Not inQuotes Then
+            ReDim Preserve result(idx)
+            result(idx) = token
+            idx = idx + 1
+            token = ""
+        Else
+            token = token & ch
+        End If
+    Next i
+    ReDim Preserve result(idx)
+    result(idx) = token
+    ParseCsvLine = result
+End Function
+
+Private Function RawRowExists(ByVal rawTable As ListObject, ByVal rowHash As String) As Boolean
+    RawRowExists = False
+    If rawTable.DataBodyRange Is Nothing Then Exit Function
+
+    Dim r As Range
+    For Each r In rawTable.ListColumns("RowHash").DataBodyRange.Cells
+        If CStr(r.value) = rowHash Then
+            RawRowExists = True
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function Crc32(ByVal text As String) As Long
+    Dim i As Long, j As Long
+    Dim crc As Long
+    crc = &HFFFFFFFF
+
+    For i = 1 To Len(text)
+        crc = crc Xor Asc(Mid$(text, i, 1))
+        For j = 1 To 8
+            If (crc And 1) Then
+                crc = (crc \\ 2) Xor &HEDB88320
+            Else
+                crc = crc \\ 2
+            End If
+        Next j
+    Next i
+    Crc32 = Not crc
+End Function
+
+'========================
+' Self test
+'========================
+
+Private Function SelfTestReport() As String
+    Dim msg As String
+    msg = "Self-test results:" & vbCrLf
+
+    msg = msg & CheckTable(SH_LEDGER, T_LEDGER) & vbCrLf
+    msg = msg & CheckTable(SH_RECEIPTS, T_RECEIPTS) & vbCrLf
+    msg = msg & CheckTable(SH_BUDGET, T_BUDGET) & vbCrLf
+    msg = msg & CheckTable(SH_MONTHSTATUS, T_MONTHSTATUS) & vbCrLf
+    msg = msg & CheckTable(SH_MEMBERS, T_MEMBERS) & vbCrLf
+    msg = msg & CheckTable(SH_MEETINGS, T_MEETINGS) & vbCrLf
+    msg = msg & CheckTable(SH_AGENDA, T_AGENDA) & vbCrLf
+    msg = msg & CheckTable(SH_IMPORTS, T_IMPORTLOG) & vbCrLf
+    msg = msg & CheckTable(SH_ERRORLOG, T_ERRORLOG) & vbCrLf
+
+    msg = msg & "Paths:" & vbCrLf
+    msg = msg & "- Board packets: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_BOARDPACKETS, ".\BoardPackets\")) & vbCrLf
+    msg = msg & "- Minutes DOCX: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_MINUTES_DOCX, ".\Minutes\DOCX\")) & vbCrLf
+    msg = msg & "- Minutes PDF: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_MINUTES_PDF, ".\Minutes\PDF\")) & vbCrLf
+    msg = msg & "- Agenda DOCX: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_DOCX, ".\Agenda\DOCX\")) & vbCrLf
+    msg = msg & "- Agenda PDF: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_AGENDA_PDF, ".\Agenda\PDF\")) & vbCrLf
+    msg = msg & "- Imports Zeffy: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_ZEFFY, ".\Imports\Zeffy\")) & vbCrLf
+    msg = msg & "- Imports Blaze: " & ResolveWorkbookRelativePath(GetConfigValue(CFG_PATH_IMPORTS_BLAZE, ".\Imports\Blaze\")) & vbCrLf
+    msg = msg & "Templates:" & vbCrLf
+    msg = msg & "- Minutes template: " & TemplateStatus("TCPP Board Meeting Minutes Template.docx") & vbCrLf
+    msg = msg & "- Agenda template: " & TemplateStatus("Template Meeting Agenda.docx") & vbCrLf
 
     SelfTestReport = msg
 End Function
 
-Private Function SheetExists(ByVal name As String) As String
-    On Error Resume Next
-    Dim ws As Worksheet: Set ws = ThisWorkbook.Worksheets(name)
-    SheetExists = IIf(ws Is Nothing, "MISSING", "OK")
+Private Function TemplateStatus(ByVal templateName As String) As String
+    Dim p As String: p = GetTemplatePath(templateName)
+    If Len(Dir(p)) = 0 Then
+        TemplateStatus = "MISSING (" & p & ")"
+    Else
+        TemplateStatus = "OK (" & p & ")"
+    End If
 End Function
 
-Private Function TableExists(ByVal sheetName As String, ByVal tableName As String) As String
-    On Error Resume Next
-    Dim lo As ListObject: Set lo = ThisWorkbook.Worksheets(sheetName).ListObjects(tableName)
-    TableExists = IIf(lo Is Nothing, "MISSING", "OK")
+Private Function CheckTable(ByVal sheetName As String, ByVal tableName As String) As String
+    On Error GoTo EH
+    Dim lo As ListObject
+    Set lo = ThisWorkbook.Worksheets(sheetName).ListObjects(tableName)
+    CheckTable = "OK: " & sheetName & "!" & tableName
+    Exit Function
+EH:
+    CheckTable = "MISSING: " & sheetName & "!" & tableName
 End Function
 
+'========================
+' Folder helpers
+'========================
+
+Private Function ResolveWorkbookRelativePath(ByVal rel As String) As String
+    Dim p As String: p = ThisWorkbook.path
+    If Len(p) = 0 Then p = CurDir$
+    ResolveWorkbookRelativePath = EnsureTrailingSlash(p) & Replace(rel, ".\", "")
+End Function
+
+Private Function EnsureTrailingSlash(ByVal p As String) As String
+    If right$(p, 1) = "\\" Then
+        EnsureTrailingSlash = p
+    Else
+        EnsureTrailingSlash = p & "\\"
+    End If
+End Function
+
+Private Sub EnsureFolderPath(ByVal folderPath As String)
+    Dim parts() As String: parts = Split(folderPath, "\\")
+    Dim i As Long, cur As String
+
+    If InStr(folderPath, ":\\") > 0 Then
+        cur = parts(0) & "\\"
+        i = 1
+    Else
+        cur = ""
+        i = 0
+    End If
+
+    For i = i To UBound(parts)
+        If Len(parts(i)) > 0 Then
+            cur = cur & parts(i) & "\\"
+            If Dir(cur, vbDirectory) = "" Then MkDir cur
+        End If
+    Next i
+End Sub
 
